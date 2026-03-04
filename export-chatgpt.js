@@ -28,7 +28,6 @@ const CONFIG = {
   exportFormat: 'both', // 'json', 'markdown', or 'both'
   accountId: null,
   updateExisting: false, // Re-download conversations even if they exist
-  fixBrokenFilenames: false, // TEMPORARY: Rename unknown_ files to proper dates
 };
 
 // File paths (set after outputDir is finalized)
@@ -70,9 +69,6 @@ function parseArgs() {
       i++;
     } else if (args[i] === '--update') {
       CONFIG.updateExisting = true;
-    } else if (args[i] === '--fix-filenames') {
-      // TEMPORARY: Flag to rename unknown_ files - REMOVE THIS LATER
-      CONFIG.fixBrokenFilenames = true;
     } else if (args[i] === '--help') {
       printHelp();
       process.exit(0);
@@ -96,7 +92,6 @@ Options:
   --format <format>     Export format: json, markdown, or both (default: both)
   --delay <ms>          Delay between requests in ms (default: 1500)
   --update              Re-download conversations even if already exported
-  --fix-filenames       TEMPORARY: Rename unknown_ files to proper date format
   --help                Show this help message
 
 Resumable:
@@ -487,70 +482,6 @@ function getDatePrefix(timestamp) {
   return 'unknown';
 }
 
-// ============================================================
-// TEMPORARY: Fix broken filenames (unknown_ prefix)
-// TODO: Remove this entire function after running --fix-filenames
-// ============================================================
-function fixBrokenFilenames(conversationIndex) {
-  console.log('🔧 TEMPORARY: Fixing broken filenames (unknown_ prefix)...\n');
-
-  let fixedCount = 0;
-  const conversations = Array.from(conversationIndex.values());
-
-  for (const conv of conversations) {
-    const shortId = conv.id.substring(0, 8);
-    const correctDatePrefix = getDatePrefix(conv.create_time);
-
-    // Skip if we couldn't determine the correct date
-    if (correctDatePrefix === 'unknown') continue;
-
-    // Check JSON directory
-    if (fs.existsSync(PATHS.jsonDir)) {
-      const jsonFiles = fs.readdirSync(PATHS.jsonDir).filter(f =>
-        f.includes(shortId) && f.startsWith('unknown_')
-      );
-
-      for (const oldFile of jsonFiles) {
-        const newFile = oldFile.replace(/^unknown_/, `${correctDatePrefix}_`);
-        const oldPath = path.join(PATHS.jsonDir, oldFile);
-        const newPath = path.join(PATHS.jsonDir, newFile);
-
-        if (!fs.existsSync(newPath)) {
-          fs.renameSync(oldPath, newPath);
-          console.log(`  JSON: ${oldFile} → ${newFile}`);
-          fixedCount++;
-        }
-      }
-    }
-
-    // Check Markdown directory
-    if (fs.existsSync(PATHS.mdDir)) {
-      const mdFiles = fs.readdirSync(PATHS.mdDir).filter(f =>
-        f.includes(shortId) && f.startsWith('unknown_')
-      );
-
-      for (const oldFile of mdFiles) {
-        const newFile = oldFile.replace(/^unknown_/, `${correctDatePrefix}_`);
-        const oldPath = path.join(PATHS.mdDir, oldFile);
-        const newPath = path.join(PATHS.mdDir, newFile);
-
-        if (!fs.existsSync(newPath)) {
-          fs.renameSync(oldPath, newPath);
-          console.log(`  MD:   ${oldFile} → ${newFile}`);
-          fixedCount++;
-        }
-      }
-    }
-  }
-
-  console.log(`\n✓ Fixed ${fixedCount} files\n`);
-  console.log('NOTE: You can now remove --fix-filenames from your command.');
-  console.log('      The --fix-filenames code can be safely deleted from the script.\n');
-}
-// ============================================================
-// END TEMPORARY CODE
-// ============================================================
-
 // Main export function
 async function exportConversations(accessToken) {
   // Ensure directories exist
@@ -588,13 +519,6 @@ async function exportConversations(accessToken) {
 
   if (conversationIndex.size === 0) {
     console.log('No conversations found.');
-    return;
-  }
-
-  // TEMPORARY: Fix broken filenames if requested
-  if (CONFIG.fixBrokenFilenames) {
-    fixBrokenFilenames(conversationIndex);
-    // Don't proceed with downloads when just fixing filenames
     return;
   }
 
