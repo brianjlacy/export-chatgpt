@@ -30,19 +30,6 @@ function prompt(question) {
   });
 }
 
-async function promptSelect(question, options, defaultOption) {
-  console.log(question);
-  for (let i = 0; i < options.length; i++) {
-    const marker = options[i] === defaultOption ? ' (default)' : '';
-    console.log(`  ${i + 1}) ${options[i]}${marker}`);
-  }
-  const answer = await prompt(`Choose [1-${options.length}]: `);
-  if (!answer) return defaultOption;
-  const idx = parseInt(answer, 10) - 1;
-  if (idx >= 0 && idx < options.length) return options[idx];
-  return defaultOption;
-}
-
 // Configuration
 const CONFIG = {
   baseUrl: 'https://chatgpt.com',
@@ -696,8 +683,17 @@ async function main() {
 
   let { bearerToken, sessionToken, explicit } = parseArgs();
 
+  // Show general instructions for obtaining credentials
+  if (!bearerToken && !sessionToken) {
+    console.log('How to get your Bearer token and Account ID:');
+    console.log('  1. Open https://chatgpt.com with DevTools (F12) > Network tab');
+    console.log('  2. Find a request to "backend-api/conversations"');
+    console.log('');
+  }
+
   // Interactive prompt for bearer token if not provided
   if (!bearerToken && !sessionToken) {
+    console.log('  Copy the "authorization: Bearer eyJ..." value (just the eyJ... part)');
     bearerToken = await prompt('Enter Bearer token: ');
     if (!bearerToken) {
       console.error('Error: No authentication token provided.');
@@ -707,6 +703,7 @@ async function main() {
 
   // Interactive prompt for account ID if not provided
   if (!CONFIG.accountId) {
+    console.log('  Copy the "chatgpt-account-id" header value (required for Teams accounts)');
     const accountId = await prompt('Enter Account ID (leave blank to skip): ');
     if (accountId) {
       CONFIG.accountId = accountId;
@@ -716,22 +713,38 @@ async function main() {
   // Confirm output directory if not explicitly specified
   if (!explicit.output) {
     const resolvedDir = path.resolve(CONFIG.outputDir);
-    const answer = await prompt(`Output directory: ${resolvedDir}\nContinue? (Y/n): `);
+    console.log('');
+    console.log(`  Conversations will be saved to: ${resolvedDir}`);
+    const answer = await prompt('Use this output directory? (Y/n): ');
     if (answer && answer.toLowerCase() === 'n') {
-      console.log('Aborted.');
-      process.exit(0);
+      const customDir = await prompt('Enter output directory: ');
+      if (customDir) {
+        CONFIG.outputDir = customDir;
+      } else {
+        console.log('Aborted.');
+        process.exit(0);
+      }
     }
   }
 
-  // Interactive selection for --update if not specified
+  // Interactive prompt for --update if not specified
   if (!explicit.update) {
-    const updateChoice = await promptSelect('Re-download existing conversations?', ['yes', 'no'], 'yes');
-    CONFIG.updateExisting = updateChoice === 'yes';
+    console.log('');
+    console.log('  Update mode re-downloads conversations that were already exported.');
+    const answer = await prompt('Re-download existing conversations? (Y/n): ');
+    CONFIG.updateExisting = !answer || answer.toLowerCase() !== 'n';
   }
 
-  // Interactive selection for --format if not specified
+  // Interactive prompt for --format if not specified
   if (!explicit.format) {
-    CONFIG.exportFormat = await promptSelect('Export format?', ['both', 'json', 'markdown'], 'both');
+    console.log('');
+    console.log('  Export format: json (raw API data), markdown (readable), or both.');
+    console.log('    1) both (default)');
+    console.log('    2) json');
+    console.log('    3) markdown');
+    const answer = await prompt('Choose format [1-3]: ');
+    const formatMap = { '1': 'both', '2': 'json', '3': 'markdown' };
+    CONFIG.exportFormat = formatMap[answer] || 'both';
   }
 
   // Initialize paths after parsing args (in case --output was used)
