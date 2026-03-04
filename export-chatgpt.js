@@ -17,6 +17,31 @@
 
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
+
+// Interactive prompt utilities
+function prompt(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+async function promptSelect(question, options, defaultOption) {
+  console.log(question);
+  for (let i = 0; i < options.length; i++) {
+    const marker = options[i] === defaultOption ? ' (default)' : '';
+    console.log(`  ${i + 1}) ${options[i]}${marker}`);
+  }
+  const answer = await prompt(`Choose [1-${options.length}]: `);
+  if (!answer) return defaultOption;
+  const idx = parseInt(answer, 10) - 1;
+  if (idx >= 0 && idx < options.length) return options[idx];
+  return defaultOption;
+}
 
 // Configuration
 const CONFIG = {
@@ -47,6 +72,7 @@ function parseArgs() {
   const args = process.argv.slice(2);
   let bearerToken = process.env.CHATGPT_BEARER_TOKEN;
   let sessionToken = process.env.CHATGPT_SESSION_TOKEN;
+  const explicit = { output: false, update: false, format: false };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--bearer' && args[i + 1]) {
@@ -60,22 +86,37 @@ function parseArgs() {
       i++;
     } else if (args[i] === '--output' && args[i + 1]) {
       CONFIG.outputDir = args[i + 1];
+      explicit.output = true;
       i++;
     } else if (args[i] === '--format' && args[i + 1]) {
       CONFIG.exportFormat = args[i + 1];
+      explicit.format = true;
       i++;
     } else if (args[i] === '--delay' && args[i + 1]) {
       CONFIG.delayBetweenRequests = parseInt(args[i + 1], 10);
       i++;
     } else if (args[i] === '--update') {
-      CONFIG.updateExisting = true;
+      explicit.update = true;
+      // Check if next arg is a value (not another flag)
+      const next = args[i + 1];
+      if (next && !next.startsWith('--')) {
+        const val = next.toLowerCase();
+        if (['yes', 'true'].includes(val)) {
+          CONFIG.updateExisting = true;
+        } else if (['no', 'false'].includes(val)) {
+          CONFIG.updateExisting = false;
+        }
+        i++;
+      } else {
+        CONFIG.updateExisting = true;
+      }
     } else if (args[i] === '--help') {
       printHelp();
       process.exit(0);
     }
   }
 
-  return { bearerToken, sessionToken };
+  return { bearerToken, sessionToken, explicit };
 }
 
 function printHelp() {
@@ -91,8 +132,13 @@ Options:
   --output <dir>        Output directory (default: ./exports)
   --format <format>     Export format: json, markdown, or both (default: both)
   --delay <ms>          Delay between requests in ms (default: 1500)
-  --update              Re-download conversations even if already exported
+  --update <yes|no>     Re-download existing conversations (yes/true/no/false)
   --help                Show this help message
+
+Interactive:
+  If --bearer, --account-id, --update, or --format are not provided,
+  you will be prompted interactively. If --output is not specified,
+  you will be asked to confirm the default output directory.
 
 Resumable:
   If interrupted, just run again with a fresh Bearer token.
@@ -108,7 +154,7 @@ Example:
   node export-chatgpt.js --bearer "eyJhbG..." --account-id "f3ae362d-0323-..."
 
   # Re-download all conversations (update existing):
-  node export-chatgpt.js --bearer "eyJ..." --account-id "..." --update
+  node export-chatgpt.js --bearer "eyJ..." --account-id "..." --update yes
 `);
 }
 
@@ -639,6 +685,7 @@ async function exportConversations(accessToken) {
     console.log(`✗ Errors: ${errorCount}`);
   }
   console.log(`📁 Total exported: ${progress.downloadedIds.length}/${conversationIndex.size}`);
+  console.log(``);
   console.log(`📁 Output directory: ${path.resolve(CONFIG.outputDir)}`);
 }
 
@@ -647,7 +694,45 @@ async function main() {
   console.log('\n🤖 ChatGPT Conversation Exporter (Resumable)\n');
   console.log('='.repeat(50) + '\n');
 
-  const { bearerToken, sessionToken } = parseArgs();
+  let { bearerToken, sessionToken, explicit } = parseArgs();
+
+  // Interactive prompt for bearer token if not provided
+  if (!bearerToken && !sessionToken) {
+    bearerToken = await prompt('Enter Bearer token: ');
+    if (!bearerToken) {
+      console.error('Error: No authentication token provided.');
+      process.exit(1);
+    }
+  }
+
+  // Interactive prompt for account ID if not provided
+  if (!CONFIG.accountId) {
+    const accountId = await prompt('Enter Account ID (leave blank to skip): ');
+    if (accountId) {
+      CONFIG.accountId = accountId;
+    }
+  }
+
+  // Confirm output directory if not explicitly specified
+  if (!explicit.output) {
+    const resolvedDir = path.resolve(CONFIG.outputDir);
+    const answer = await prompt(`Output directory: ${resolvedDir}\nContinue? (Y/n): `);
+    if (answer && answer.toLowerCase() === 'n') {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+  }
+
+  // Interactive selection for --update if not specified
+  if (!explicit.update) {
+    const updateChoice = await promptSelect('Re-download existing conversations?', ['yes', 'no'], 'yes');
+    CONFIG.updateExisting = updateChoice === 'yes';
+  }
+
+  // Interactive selection for --format if not specified
+  if (!explicit.format) {
+    CONFIG.exportFormat = await promptSelect('Export format?', ['both', 'json', 'markdown'], 'both');
+  }
 
   // Initialize paths after parsing args (in case --output was used)
   initPaths();
@@ -664,10 +749,7 @@ async function main() {
   }
 
   if (!accessToken) {
-    console.error('Error: No authentication token provided.\n');
-    console.error('For ChatGPT Teams, provide your Bearer token:');
-    console.error('  node export-chatgpt.js --bearer "eyJ..." --account-id "your-account-id"');
-    console.error('\nRun with --help for more information.');
+    console.error('Error: No authentication token provided.');
     process.exit(1);
   }
 
