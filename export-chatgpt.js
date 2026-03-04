@@ -27,6 +27,8 @@ const CONFIG = {
   conversationsPerPage: 28,
   exportFormat: 'both', // 'json', 'markdown', or 'both'
   accountId: null,
+  updateExisting: false, // Re-download conversations even if they exist
+  fixBrokenFilenames: false, // TEMPORARY: Rename unknown_ files to proper dates
 };
 
 // File paths (set after outputDir is finalized)
@@ -66,6 +68,11 @@ function parseArgs() {
     } else if (args[i] === '--delay' && args[i + 1]) {
       CONFIG.delayBetweenRequests = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i] === '--update') {
+      CONFIG.updateExisting = true;
+    } else if (args[i] === '--fix-filenames') {
+      // TEMPORARY: Flag to rename unknown_ files - REMOVE THIS LATER
+      CONFIG.fixBrokenFilenames = true;
     } else if (args[i] === '--help') {
       printHelp();
       process.exit(0);
@@ -88,6 +95,8 @@ Options:
   --output <dir>        Output directory (default: ./exports)
   --format <format>     Export format: json, markdown, or both (default: both)
   --delay <ms>          Delay between requests in ms (default: 1500)
+  --update              Re-download conversations even if already exported
+  --fix-filenames       TEMPORARY: Rename unknown_ files to proper date format
   --help                Show this help message
 
 Resumable:
@@ -102,6 +111,9 @@ How to get your Bearer token (for Teams):
 
 Example:
   node export-chatgpt.js --bearer "eyJhbG..." --account-id "f3ae362d-0323-..."
+
+  # Re-download all conversations (update existing):
+  node export-chatgpt.js --bearer "eyJ..." --account-id "..." --update
 `);
 }
 
@@ -234,7 +246,7 @@ async function fetchConversationListIncremental(accessToken, existingIndex, prog
   console.log('📋 Fetching conversation list...');
 
   if (progress.indexingComplete) {
-    console.log('  Index already complete, skipping to downloads\n');
+    console.log(`  Index already complete (${existingIndex.size} conversations), skipping to downloads\n`);
     return existingIndex;
   }
 
@@ -246,6 +258,7 @@ async function fetchConversationListIncremental(accessToken, existingIndex, prog
   let offset = startOffset;
   let hasMore = true;
   let newCount = 0;
+  let pagesWithNoNew = 0;
 
   while (hasMore) {
     const url = `${CONFIG.apiBase}/conversations?offset=${offset}&limit=${CONFIG.conversationsPerPage}&order=updated`;
@@ -259,10 +272,12 @@ async function fetchConversationListIncremental(accessToken, existingIndex, prog
 
       if (data.items && data.items.length > 0) {
         // Add new conversations to index
+        let pageNewCount = 0;
         for (const conv of data.items) {
           if (!existingIndex.has(conv.id)) {
             existingIndex.set(conv.id, conv);
             newCount++;
+            pageNewCount++;
           }
         }
 
@@ -273,6 +288,19 @@ async function fetchConversationListIncremental(accessToken, existingIndex, prog
 
         console.log(`  Found ${existingIndex.size} conversations (${newCount} new)...`);
         offset += data.items.length;
+
+        // Track pages with no new conversations to detect when we've seen everything
+        if (pageNewCount === 0) {
+          pagesWithNoNew++;
+          // If we've gone 3 pages with no new conversations, we're probably done
+          if (pagesWithNoNew >= 3) {
+            console.log('  No new conversations found, index appears complete.');
+            hasMore = false;
+            break;
+          }
+        } else {
+          pagesWithNoNew = 0;
+        }
 
         hasMore = data.items.length === CONFIG.conversationsPerPage;
 
@@ -459,6 +487,70 @@ function getDatePrefix(timestamp) {
   return 'unknown';
 }
 
+// ============================================================
+// TEMPORARY: Fix broken filenames (unknown_ prefix)
+// TODO: Remove this entire function after running --fix-filenames
+// ============================================================
+function fixBrokenFilenames(conversationIndex) {
+  console.log('🔧 TEMPORARY: Fixing broken filenames (unknown_ prefix)...\n');
+
+  let fixedCount = 0;
+  const conversations = Array.from(conversationIndex.values());
+
+  for (const conv of conversations) {
+    const shortId = conv.id.substring(0, 8);
+    const correctDatePrefix = getDatePrefix(conv.create_time);
+
+    // Skip if we couldn't determine the correct date
+    if (correctDatePrefix === 'unknown') continue;
+
+    // Check JSON directory
+    if (fs.existsSync(PATHS.jsonDir)) {
+      const jsonFiles = fs.readdirSync(PATHS.jsonDir).filter(f =>
+        f.includes(shortId) && f.startsWith('unknown_')
+      );
+
+      for (const oldFile of jsonFiles) {
+        const newFile = oldFile.replace(/^unknown_/, `${correctDatePrefix}_`);
+        const oldPath = path.join(PATHS.jsonDir, oldFile);
+        const newPath = path.join(PATHS.jsonDir, newFile);
+
+        if (!fs.existsSync(newPath)) {
+          fs.renameSync(oldPath, newPath);
+          console.log(`  JSON: ${oldFile} → ${newFile}`);
+          fixedCount++;
+        }
+      }
+    }
+
+    // Check Markdown directory
+    if (fs.existsSync(PATHS.mdDir)) {
+      const mdFiles = fs.readdirSync(PATHS.mdDir).filter(f =>
+        f.includes(shortId) && f.startsWith('unknown_')
+      );
+
+      for (const oldFile of mdFiles) {
+        const newFile = oldFile.replace(/^unknown_/, `${correctDatePrefix}_`);
+        const oldPath = path.join(PATHS.mdDir, oldFile);
+        const newPath = path.join(PATHS.mdDir, newFile);
+
+        if (!fs.existsSync(newPath)) {
+          fs.renameSync(oldPath, newPath);
+          console.log(`  MD:   ${oldFile} → ${newFile}`);
+          fixedCount++;
+        }
+      }
+    }
+  }
+
+  console.log(`\n✓ Fixed ${fixedCount} files\n`);
+  console.log('NOTE: You can now remove --fix-filenames from your command.');
+  console.log('      The --fix-filenames code can be safely deleted from the script.\n');
+}
+// ============================================================
+// END TEMPORARY CODE
+// ============================================================
+
 // Main export function
 async function exportConversations(accessToken) {
   // Ensure directories exist
@@ -475,6 +567,9 @@ async function exportConversations(accessToken) {
   console.log('🔑 Using provided Bearer token');
   if (CONFIG.accountId) {
     console.log(`📋 Teams Account ID: ${CONFIG.accountId}`);
+  }
+  if (CONFIG.updateExisting) {
+    console.log('🔄 Update mode: Will re-download existing conversations');
   }
   console.log('');
 
@@ -496,42 +591,73 @@ async function exportConversations(accessToken) {
     return;
   }
 
+  // TEMPORARY: Fix broken filenames if requested
+  if (CONFIG.fixBrokenFilenames) {
+    fixBrokenFilenames(conversationIndex);
+    // Don't proceed with downloads when just fixing filenames
+    return;
+  }
+
   // Download conversations
   console.log('📥 Downloading conversations...\n');
 
   const conversations = Array.from(conversationIndex.values());
   let successCount = 0;
   let skipCount = 0;
+  let updateCount = 0;
   let errorCount = 0;
 
   for (let i = 0; i < conversations.length; i++) {
     const conv = conversations[i];
     const progress_display = `[${i + 1}/${conversations.length}]`;
-
-    // Check if already downloaded
-    if (progress.downloadedIds.includes(conv.id)) {
-      skipCount++;
-      continue;
-    }
-
-    // Also check if files exist on disk
     const shortId = conv.id.substring(0, 8);
-    const existingFiles = fs.readdirSync(PATHS.jsonDir).filter(f => f.includes(shortId));
-    if (existingFiles.length > 0) {
-      progress.downloadedIds.push(conv.id);
-      saveProgress(progress);
-      skipCount++;
-      continue;
+
+    // Check if already downloaded (unless --update flag is set)
+    if (!CONFIG.updateExisting) {
+      if (progress.downloadedIds.includes(conv.id)) {
+        skipCount++;
+        continue;
+      }
+
+      // Also check if files exist on disk
+      const existingFiles = fs.readdirSync(PATHS.jsonDir).filter(f => f.includes(shortId));
+      if (existingFiles.length > 0) {
+        progress.downloadedIds.push(conv.id);
+        saveProgress(progress);
+        skipCount++;
+        continue;
+      }
     }
+
+    // Check if this is an update (file exists but we're re-downloading)
+    const isUpdate = CONFIG.updateExisting && (
+      progress.downloadedIds.includes(conv.id) ||
+      fs.readdirSync(PATHS.jsonDir).filter(f => f.includes(shortId)).length > 0
+    );
 
     try {
-      process.stdout.write(`${progress_display} "${(conv.title || 'Untitled').substring(0, 50)}"... `);
+      const action = isUpdate ? '↻' : '→';
+      process.stdout.write(`${progress_display} ${action} "${(conv.title || 'Untitled').substring(0, 50)}"... `);
 
       const fullConversation = await fetchConversation(accessToken, conv.id);
 
       const filename = sanitizeFilename(conv.title || conv.id);
       const datePrefix = getDatePrefix(conv.create_time);
       const baseFilename = `${datePrefix}_${filename}_${shortId}`;
+
+      // If updating, remove old files with this shortId first
+      if (isUpdate) {
+        const oldJsonFiles = fs.readdirSync(PATHS.jsonDir).filter(f => f.includes(shortId));
+        for (const f of oldJsonFiles) {
+          fs.unlinkSync(path.join(PATHS.jsonDir, f));
+        }
+        if (fs.existsSync(PATHS.mdDir)) {
+          const oldMdFiles = fs.readdirSync(PATHS.mdDir).filter(f => f.includes(shortId));
+          for (const f of oldMdFiles) {
+            fs.unlinkSync(path.join(PATHS.mdDir, f));
+          }
+        }
+      }
 
       // Save JSON
       if (CONFIG.exportFormat === 'json' || CONFIG.exportFormat === 'both') {
@@ -547,11 +673,17 @@ async function exportConversations(accessToken) {
       }
 
       // Mark as downloaded
-      progress.downloadedIds.push(conv.id);
+      if (!progress.downloadedIds.includes(conv.id)) {
+        progress.downloadedIds.push(conv.id);
+      }
       saveProgress(progress);
 
       console.log('✓');
-      successCount++;
+      if (isUpdate) {
+        updateCount++;
+      } else {
+        successCount++;
+      }
 
       // Delay between requests
       if (i < conversations.length - 1) {
@@ -574,7 +706,10 @@ async function exportConversations(accessToken) {
   console.log('\n' + '='.repeat(50));
   console.log('Export Complete!');
   console.log('='.repeat(50));
-  console.log(`✓ Downloaded this session: ${successCount}`);
+  console.log(`✓ Downloaded (new): ${successCount}`);
+  if (updateCount > 0) {
+    console.log(`↻ Updated: ${updateCount}`);
+  }
   console.log(`⏭ Skipped (already done): ${skipCount}`);
   if (errorCount > 0) {
     console.log(`✗ Errors: ${errorCount}`);
