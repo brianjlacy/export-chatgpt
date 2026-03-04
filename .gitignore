@@ -1,0 +1,125 @@
+# .gitignore file created for free with Tower (https://www.git-tower.com/)
+# For suggestions or improvements please contact us using support@git-tower.com
+# Generated on 2026-03-04
+# Includes: node
+
+exports/
+
+### Universal ###
+# Common files that should be ignored in all projects
+
+# Logs
+*.log
+# Temporary files
+*.tmp
+*~
+
+*.bak
+# Environment files (containing secrets, API keys, credentials)
+.env
+*.env
+.env.*
+
+# Local configuration that shouldn't be shared
+*.local
+
+### Node ###
+# Node.js dependency directory, logs, and environment files
+
+# Dependencies
+node_modules/
+jspm_packages/
+bower_components/
+web_modules/
+
+# Logs
+logs
+*.log
+*.launch
+connect.lock/
+
+libpeerconnection.log
+.history/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+lerna-debug.log*
+.pnpm-debug.log*
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+# Runtime data
+
+pids
+*.pid
+*.seed
+*.pid.lock
+# Environment
+
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+# Package management
+
+.npm
+package-lock.json
+yarn.lock
+.yarn-integrity
+.yarn/cache
+
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+# Coverage & Test
+
+coverage/
+lib-cov
+*.lcov
+.nyc_output
+# Build output
+
+dist/
+build/
+.next/
+out/
+.nuxt
+
+.output
+# Cache & Temporary
+.cache/
+.temp/
+.grunt
+
+.lock-wscript
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test
+
+.node_repl_history
+.webpack/
+# TypeScript
+*.tsbuildinfo
+# Optional REPL history
+
+.node_repl_history
+# Additional caches
+.eslintcache
+.stylelintcache
+.parcel-cache
+
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+# Misc
+
+*.tgz
+.serverless/
+.vuepress/dist
+.temp
+.docusaurus
+
+.svelte-kit
