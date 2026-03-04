@@ -97,10 +97,10 @@ When flags are omitted, the user is prompted interactively:
 1. **Bearer token** — if `--bearer` and `--token` both absent
 2. **Account ID** — if `--account-id` absent (can skip for personal)
 3. **Output directory** — confirm default or enter custom
-4. **Update mode** — re-download existing? (Y/n)
+4. **Update mode** — re-download existing? (y/N) — defaults to no
 5. **Export format** — json / markdown / both
-6. **Include projects** — export project conversations? (Y/n) *(new)*
-7. **Download files** — download images/attachments? (Y/n) *(new)*
+6. **Include projects** — export project conversations? (y/N) — defaults to no *(new)*
+7. **Download files** — download images/attachments? (y/N) — defaults to no *(new)*
 
 ---
 
@@ -273,8 +273,9 @@ GET /backend-api/tasks/{task_id}/stream?parent_conversation_id={id}&message_id={
 │   │   │   └── {date}_{title}_{shortId}.json
 │   │   ├── markdown/
 │   │   │   └── {date}_{title}_{shortId}.md
-│   │   └── files/
-│   │       └── {file_id}.{ext}
+│   │   ├── files/
+│   │   │   └── {file_id}.{ext}
+│   │   └── conversation-index.json          # Per-project conversation metadata
 │   └── project-index.json
 ├── conversation-index.json                  # Regular conversation metadata
 └── .export-progress.json                    # Resumption state
@@ -326,6 +327,7 @@ id: {uuid}
 create_time: {ISO timestamp}
 update_time: {ISO timestamp}
 model: {model name, if available}
+project_id: {gizmo_id, if project conversation}
 ---
 
 # Conversation Title
@@ -338,6 +340,32 @@ model: {model name, if available}
 
 [message content]
 ```
+
+#### Enhanced Content Type Rendering
+
+| Content Type | Markdown Rendering |
+|---|---|
+| `text` | Plain text |
+| `code` | Fenced code block |
+| `multimodal_text` | Text parts inline; images as `![image](files/{id}.ext)` (with `--download-files`) or `[Image: {id}]` |
+| `tether_browsing_display` | Blockquote: `> **Browsing Result:** ...` |
+| `thoughts` | Collapsible `<details><summary>Thinking</summary>` block |
+| `reasoning_recap` | Italic: `*Reasoning recap: ...*` |
+| `model_editable_context` | Omitted from Markdown output |
+
+#### Tool Message Rendering
+
+| Tool Name | Markdown Rendering |
+|---|---|
+| `research_kickoff_tool.start_research_task` | `> **Deep Research:** {title}` |
+| `research_kickoff_tool.clarify_with_text` | `> **Research Clarification:** {text}` |
+| `file_search` | `> **Searched files:** {text}` |
+| Other tools | `> **Tool ({name}):** {text}` |
+
+#### Deep Research Result Messages
+
+Messages with `metadata.is_async_task_result_message: true` are rendered with a special header:
+`## Assistant (Deep Research: {task_title})`
 
 ---
 
@@ -361,7 +389,7 @@ Traversal: find root (no parent), follow first child recursively to extract line
 | `code` | Code execution results | Wrap in code block |
 | `multimodal_text` | Messages with images/files | Extract text parts; reference files via `asset_pointer` |
 | `tether_browsing_display` | Web browsing results | Extract browsing summary |
-| `model_editable_context` | System context | Skip or include as system message |
+| `model_editable_context` | System context | Omitted from Markdown output |
 | `thoughts` | Reasoning/thinking (o1/o3) | Include in Markdown under "Thinking" section |
 | `reasoning_recap` | Summary of reasoning | Include as assistant recap |
 
@@ -542,6 +570,7 @@ This is optional and can be captured as supplementary metadata alongside the con
 ### 13.3 Network Errors
 
 - Retry 3 times with 2-second delay between attempts
+- File downloads also retry 3 times with 2-second delay (signed URLs, no auth headers)
 - Non-auth errors fail after exhausting retries
 
 ### 13.4 File System Errors
@@ -610,4 +639,13 @@ chatgpt-account-id: {account_id}
 6. **Timestamps** — ISO 8601 (same across regular and project conversations)
 7. **Conversation data is identical** — Project conversations use the same data structure as regular ones
 8. **The `chatgpt-account-id` header** is required for Teams, optional for personal
-9. **Hidden messages** — Some messages have `is_visually_hidden_from_conversation: true`; include in export but can be omitted from Markdown
+9. **Hidden messages** — Messages with `is_visually_hidden_from_conversation: true` are included in JSON export but omitted from Markdown output
+
+---
+
+### Document History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| v1.0 | 2025-03-04 | user | Initial specification |
+| v1.1 | 2026-03-04 | audit-docs | Synced with implementation: updated interactive prompt defaults (y/N), added per-project conversation-index.json to output structure, documented enhanced Markdown rendering (content types, tool messages, deep research headers, project_id frontmatter), clarified model_editable_context is always omitted from Markdown, added file download retry behavior, made hidden-message handling definitive |

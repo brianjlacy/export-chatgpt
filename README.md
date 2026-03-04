@@ -2,6 +2,13 @@
 
 Bulk export all your ChatGPT conversations using the backend API. Works with both personal and Teams accounts. **Resumable** — if your token expires mid-export, just run again with a fresh token and it picks up where it left off.
 
+Supports:
+- **Regular conversations** — your main ChatGPT history
+- **Project conversations** — conversations inside ChatGPT Projects
+- **File downloads** — DALL-E images, user uploads, attachments
+- **Deep research** — captures async research task results
+- **Enhanced Markdown** — browsing results, reasoning/thinking, tool usage
+
 ## Requirements
 
 - Node.js 18+ (uses native `fetch`)
@@ -33,9 +40,24 @@ node export-chatgpt.js --bearer "eyJ..." --account-id "f3ae362d-..."
 ### 3. Find Your Exports
 
 Conversations are saved to `./exports/`:
-- `exports/json/` — Full conversation data in JSON format
-- `exports/markdown/` — Human-readable Markdown files with YAML frontmatter
-- `exports/conversation-index.json` — List of all conversations with metadata
+
+```
+exports/
+├── json/                          # Regular conversation JSON
+│   └── {date}_{title}_{id}.json
+├── markdown/                      # Regular conversation Markdown
+│   └── {date}_{title}_{id}.md
+├── files/                         # Files from regular conversations
+│   └── {file_id}.{ext}
+├── projects/                      # Project-scoped exports
+│   ├── {ProjectName}/
+│   │   ├── json/
+│   │   ├── markdown/
+│   │   └── files/
+│   └── project-index.json
+├── conversation-index.json
+└── .export-progress.json          # Resumption state
+```
 
 Files are named with the pattern `{date}_{title}_{id}.{ext}`.
 
@@ -50,20 +72,46 @@ The script tracks progress automatically:
 ## Options
 
 ```
---bearer <token>      Bearer/Access token (recommended, required for Teams)
---account-id <id>     ChatGPT Account ID (required for Teams)
---token <token>       Session token (alternative auth method, personal accounts only)
---output <dir>        Output directory (default: ./exports)
---format <format>     Export format: json, markdown, or both (default: both)
---delay <ms>          Delay between API requests in ms (default: 1500)
---help                Show help message
+--bearer <token>        Bearer/Access token (recommended, required for Teams)
+--account-id <id>       ChatGPT Account ID (required for Teams)
+--token <token>         Session token (alternative auth, personal accounts only)
+--output <dir>          Output directory (default: ./exports)
+--format <format>       Export format: json, markdown, or both (default: both)
+--delay <ms>            Delay between API requests in ms (default: 1500)
+--update <yes|no>       Re-download existing conversations
+--include-projects      Also export project conversations
+--projects-only         Export only project conversations (skip regular)
+--download-files        Download images/attachments from conversations
+--help                  Show help message
 ```
 
 You can also set the token via environment variables: `CHATGPT_BEARER_TOKEN` or `CHATGPT_SESSION_TOKEN`.
 
+### Interactive Mode
+
+When flags are omitted, the script prompts interactively for:
+- Bearer token and account ID
+- Output directory
+- Update mode
+- Export format
+- Whether to include project conversations
+- Whether to download files/images
+
 ## Examples
 
 ```bash
+# Regular conversations only (default)
+node export-chatgpt.js --bearer "eyJ..."
+
+# Include project conversations
+node export-chatgpt.js --bearer "eyJ..." --include-projects
+
+# Only project conversations
+node export-chatgpt.js --bearer "eyJ..." --projects-only
+
+# Download all images and attachments
+node export-chatgpt.js --bearer "eyJ..." --include-projects --download-files
+
 # Export only JSON
 node export-chatgpt.js --bearer "eyJ..." --format json
 
@@ -73,9 +121,27 @@ node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
 # Slower requests to avoid rate limiting
 node export-chatgpt.js --bearer "eyJ..." --delay 3000
 
+# Re-download all conversations
+node export-chatgpt.js --bearer "eyJ..." --update yes
+
 # Resume after token expiry — just run again
 node export-chatgpt.js --bearer "fresh-eyJ..."
 ```
+
+## Markdown Output
+
+The Markdown output includes YAML frontmatter and handles multiple content types:
+
+| Content Type | Rendering |
+|---|---|
+| Text messages | Standard Markdown |
+| Code results | Fenced code blocks |
+| Images/files | `![image](files/{id}.ext)` links (with `--download-files`) or `[Image: {id}]` |
+| Browsing results | Blockquote with "Browsing Result" header |
+| Thinking/reasoning (o1/o3) | Collapsible `<details>` block |
+| Reasoning recap | Italic summary |
+| Deep research results | "Assistant (Deep Research: title)" header |
+| Tool messages | Blockquote with tool name |
 
 ## Troubleshooting
 
@@ -102,8 +168,10 @@ node export-chatgpt.js --bearer "eyJ..." --delay 3000
 1. Uses your Bearer token directly for API authentication (or exchanges a session token for one)
 2. Incrementally fetches the conversation list via `/backend-api/conversations` (28 per page), saving progress after each page
 3. Downloads each conversation's full content via `/backend-api/conversation/{id}`, tracking completed downloads
-4. Saves to JSON and/or Markdown files
-5. On auth failure, saves progress and exits — re-running skips already-completed work
+4. If `--include-projects` or `--projects-only`: fetches project list via `/backend-api/gizmos/snorlax/sidebar`, then indexes and downloads each project's conversations
+5. If `--download-files`: scans conversation data for `image_asset_pointer` references and downloads via `/backend-api/files/download/{id}`
+6. Saves to JSON and/or Markdown files
+7. On auth failure, saves all progress and exits — re-running skips already-completed work
 
 ## License
 
