@@ -1,6 +1,6 @@
 # ChatGPT Conversation Exporter
 
-Bulk export all your ChatGPT conversations using the backend API. Works with both personal and Teams accounts by using the Bearer token from DevTools.
+Bulk export all your ChatGPT conversations using the backend API. Works with both personal and Teams accounts. **Resumable** — if your token expires mid-export, just run again with a fresh token and it picks up where it left off.
 
 ## Requirements
 
@@ -14,8 +14,7 @@ Bulk export all your ChatGPT conversations using the backend API. Works with bot
 2. Open DevTools (F12) → **Network** tab
 3. Refresh the page or click on a conversation
 4. Find a request to `backend-api/conversations`
-5. Look in the Request Headers for `authorization: Bearer eyJ...`
-6. Copy the token (the part starting with `eyJ`)
+5. Copy the `authorization: Bearer eyJ...` header value (just the `eyJ...` part)
 
 For **Teams accounts**, also copy the `chatgpt-account-id` header value from the same request.
 
@@ -39,6 +38,14 @@ Conversations are saved to `./exports/`:
 - `exports/conversation-index.json` — List of all conversations with metadata
 
 Files are named with the pattern `{date}_{title}_{id}.{ext}`.
+
+## Resumable Exports
+
+The script tracks progress automatically:
+- `exports/.export-progress.json` stores which conversations have been downloaded and where indexing left off
+- If your token expires mid-export, the script saves progress and exits gracefully
+- Just run again with a fresh Bearer token — already-downloaded conversations are skipped
+- The conversation index is also built incrementally, resuming from the last page fetched
 
 ## Options
 
@@ -65,14 +72,18 @@ node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
 
 # Slower requests to avoid rate limiting
 node export-chatgpt.js --bearer "eyJ..." --delay 3000
+
+# Resume after token expiry — just run again
+node export-chatgpt.js --bearer "fresh-eyJ..."
 ```
 
 ## Troubleshooting
 
-### "Authentication failed"
+### "Authentication failed" / token expired mid-export
 - Bearer tokens expire quickly — get a fresh one from DevTools
 - Make sure you copied the **entire** token (starts with `eyJ`)
 - For Teams accounts, make sure to include `--account-id`
+- Progress is saved automatically, so just re-run with a new token
 
 ### "No conversations found"
 This likely means one of:
@@ -89,9 +100,10 @@ node export-chatgpt.js --bearer "eyJ..." --delay 3000
 ## How It Works
 
 1. Uses your Bearer token directly for API authentication (or exchanges a session token for one)
-2. Fetches the list of all conversations via `/backend-api/conversations` (paginated, 28 per page)
-3. Downloads each conversation's full content via `/backend-api/conversation/{id}`
+2. Incrementally fetches the conversation list via `/backend-api/conversations` (28 per page), saving progress after each page
+3. Downloads each conversation's full content via `/backend-api/conversation/{id}`, tracking completed downloads
 4. Saves to JSON and/or Markdown files
+5. On auth failure, saves progress and exits — re-running skips already-completed work
 
 ## License
 
