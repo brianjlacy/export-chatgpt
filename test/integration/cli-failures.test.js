@@ -73,9 +73,9 @@ describe('CLI failure cases', () => {
     expect(stdout).not.toContain('--non-interactive requires --bearer');
   });
 
-  test('--format with invalid value still runs (no validation currently)', () => {
-    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--format', 'xml']);
-    // Should proceed without crashing (format just won't match any case)
-    expect(stdout).toContain('ChatGPT Conversation Exporter');
+  test('--format with invalid value exits with error', () => {
+    const { stdout, exitCode } = run(['--bearer', 'fake', '--non-interactive', '--format', 'xml']);
+    expect(exitCode).toBe(1);
+    expect(stdout).toContain('--format must be one of');
   });
 });

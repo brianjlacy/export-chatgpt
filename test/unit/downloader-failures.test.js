@@ -74,6 +74,7 @@ describe('downloader failure cases', () => {
         if (url === 'https://cdn.example.com/ok.png') {
           return Promise.resolve({
             ok: true, status: 200,
+            headers: { get: () => 'image/png' },
             arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
           });
         }
@@ -238,12 +239,14 @@ describe('downloader failure cases', () => {
         .mockResolvedValueOnce({ ok: false, status: 500 })
         .mockResolvedValueOnce({
           ok: true, status: 200,
+          headers: { get: () => 'image/png' },
           arrayBuffer: () => Promise.resolve(new ArrayBuffer(50)),
         });
 
       const outPath = path.join(tmpDir, 'test-retry.png');
-      const bytes = await downloadFile('https://cdn.example.com/file.png', outPath, 'token');
-      expect(bytes).toBe(50);
+      const result = await downloadFile('https://cdn.example.com/file.png', outPath, 'token');
+      expect(result.bytes).toBe(50);
+      expect(result.contentType).toBe('image/png');
       expect(global.fetch).toHaveBeenCalledTimes(3);
     });
 

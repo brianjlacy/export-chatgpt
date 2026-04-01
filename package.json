@@ -20,8 +20,13 @@
     "conversations",
     "backup"
   ],
-  "author": "",
+  "author": "Brian Lacy",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brianjlacy/export-chatgpt.git"
+  },
+  "homepage": "https://github.com/brianjlacy/export-chatgpt",
   "engines": {
     "node": ">=18.0.0"
   },

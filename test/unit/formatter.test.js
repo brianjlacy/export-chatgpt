@@ -261,6 +261,37 @@ describe('formatter', () => {
     });
   });
 
+  describe('mimeToExtension', () => {
+    test('maps known MIME types to extensions', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('image/png')).toBe('.png');
+      expect(mimeToExtension('image/jpeg')).toBe('.jpg');
+      expect(mimeToExtension('application/pdf')).toBe('.pdf');
+      expect(mimeToExtension('application/json')).toBe('.json');
+      expect(mimeToExtension('text/html')).toBe('.html');
+      expect(mimeToExtension('text/plain')).toBe('.txt');
+    });
+
+    test('handles MIME with charset suffix', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('text/html; charset=utf-8')).toBe('.html');
+      expect(mimeToExtension('application/json; charset=utf-8')).toBe('.json');
+    });
+
+    test('returns empty string for unknown MIME types', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('application/octet-stream')).toBe('');
+      expect(mimeToExtension('video/mp4')).toBe('');
+    });
+
+    test('returns empty string for null/undefined/empty', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension(null)).toBe('');
+      expect(mimeToExtension(undefined)).toBe('');
+      expect(mimeToExtension('')).toBe('');
+    });
+  });
+
   describe('guessFileExtension', () => {
     test('returns .png for DALL-E images', () => {
       const { guessFileExtension } = load();
