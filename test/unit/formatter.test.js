@@ -79,8 +79,11 @@ describe('formatter', () => {
 
     test('replaces dot-only names (directory traversal prevention)', () => {
       const { sanitizeFilename } = load();
-      expect(sanitizeFilename('..')).toBe('untitled');
-      expect(sanitizeFilename('...')).toBe('untitled');
+      // Multi-dot sequences are collapsed to '_', preventing traversal
+      expect(sanitizeFilename('..')).toBe('_');
+      expect(sanitizeFilename('...')).toBe('_');
+      // Single dot still caught by final regex
+      expect(sanitizeFilename('.')).toBe('untitled');
     });
   });
 
@@ -104,7 +107,9 @@ describe('formatter', () => {
 
     test('replaces dot-only names', () => {
       const { sanitizeProjectFolder } = load();
-      expect(sanitizeProjectFolder('..')).toBe('untitled_project');
+      // Multi-dot sequences are collapsed to '_', preventing traversal
+      expect(sanitizeProjectFolder('..')).toBe('_');
+      expect(sanitizeProjectFolder('.')).toBe('untitled_project');
     });
   });
 
