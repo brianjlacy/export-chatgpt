@@ -25,7 +25,7 @@ A Node.js CLI tool that bulk-exports all ChatGPT conversations via the ChatGPT b
 | Requirement | Detail |
 |-------------|--------|
 | Runtime | Node.js >= 18.0.0 (native `fetch`) |
-| Dependencies | None (zero external packages) |
+| Dependencies | `commander ^12.0.0` (CLI arg parsing) |
 | Platform | Cross-platform (Windows, macOS, Linux) |
 | Auth | Bearer token or session token |
 
@@ -62,45 +62,37 @@ A Node.js CLI tool that bulk-exports all ChatGPT conversations via the ChatGPT b
 
 ## 4. CLI Interface
 
-### 4.1 Existing Flags
+### 4.1 Flags
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--bearer <token>` | string | — | Bearer/access token |
-| `--token <token>` | string | — | Session token (alt auth) |
-| `--account-id <id>` | string | — | Teams account ID |
-| `--output <dir>` | string | `./exports` | Output directory |
+| `--bearer <token>` | string | — | Bearer/access token (or `CHATGPT_BEARER_TOKEN` env var) |
+| `--token <token>` | string | — | Session token (alt auth, or `CHATGPT_SESSION_TOKEN` env var) |
+| `--account-id <id>` | string | — | Teams account ID (auto-detected from JWT when not provided) |
+| `-o, --output <dir>` | string | `./exports` | Output directory |
 | `--format <fmt>` | string | `both` | `json`, `markdown`, or `both` |
-| `--delay <ms>` | number | `1500` | Delay between API requests |
-| `--update [yes\|no]` | boolean | `false` | Re-download existing conversations |
+| `--delay <ms>` | number | `1500` | Delay between API requests in ms |
+| `--update` | boolean flag | `false` | Re-download and overwrite existing conversations |
+| `--no-projects` | boolean flag | — | Skip project conversations (projects are exported by default) |
+| `--projects-only` | boolean flag | `false` | Export only project conversations (skip regular) |
+| `--no-files` | boolean flag | — | Skip ALL file downloads (overrides granular flags below) |
+| `--no-images` | boolean flag | — | Skip downloading DALL-E images |
+| `--no-canvas` | boolean flag | — | Skip downloading canvas documents |
+| `--no-attachments` | boolean flag | — | Skip downloading other file attachments |
+| `--verbose` | boolean flag | `false` | Show detailed request/response info |
 | `--help` | flag | — | Show help message |
 
-### 4.2 New Flags
+### 4.2 Flag Interactions
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--include-projects` | flag | `false` | Also export project conversations |
-| `--projects-only` | flag | `false` | Export only project conversations (skip regular) |
-| `--download-files` | flag | `false` | Download images/attachments from conversations |
+- **Projects:** Exported by default. Use `--no-projects` to skip, or `--projects-only` to export only projects.
+- `--projects-only` implies project export and skips the regular conversation export.
+- **Files:** All file types downloaded by default. `--no-files` overrides all granular flags (`--no-images`, `--no-canvas`, `--no-attachments`).
+- `--delay` must be a non-negative integer; invalid values fall back to the default of 1500ms with a warning.
+- `--account-id` is auto-detected from the JWT payload when not provided explicitly.
 
-### 4.3 Flag Interactions
+### 4.3 Interactive Prompts
 
-- `--projects-only` implies project export and skips the regular conversation export
-- `--include-projects` runs both regular and project exports
-- Default (neither flag): only regular conversations (backward-compatible)
-- `--download-files` applies to whichever conversations are being exported
-
-### 4.4 Interactive Prompts
-
-When flags are omitted, the user is prompted interactively:
-
-1. **Bearer token** — if `--bearer` and `--token` both absent
-2. **Account ID** — if `--account-id` absent (can skip for personal)
-3. **Output directory** — confirm default or enter custom
-4. **Update mode** — re-download existing? (y/N) — defaults to no
-5. **Export format** — json / markdown / both
-6. **Include projects** — export project conversations? (y/N) — defaults to no *(new)*
-7. **Download files** — download images/attachments? (y/N) — defaults to no *(new)*
+The only interactive prompt is the **bearer token**: if neither `--bearer`, `--token`, `CHATGPT_BEARER_TOKEN`, nor `CHATGPT_SESSION_TOKEN` is provided, the script prompts the user to enter a token. All other configuration is controlled via CLI flags with sensible defaults.
 
 ---
 
@@ -570,7 +562,7 @@ This is optional and can be captured as supplementary metadata alongside the con
 ### 13.3 Network Errors
 
 - Retry 3 times with 2-second delay between attempts
-- File downloads also retry 3 times with 2-second delay (signed URLs, no auth headers)
+- File downloads also retry 3 times with 2-second delay; auth headers are included when an access token is available (required for Teams accounts whose download URLs are not pre-signed CDN URLs)
 - Non-auth errors fail after exhausting retries
 
 ### 13.4 File System Errors
@@ -631,7 +623,7 @@ chatgpt-account-id: {account_id}
 
 ## 16. Constraints & Notes
 
-1. **Single file architecture** — The tool is a single `export-chatgpt.js` file with no external dependencies
+1. **Modular architecture** — The tool is split into `export-chatgpt.js` (shim entry point) and focused modules in `lib/` (`config`, `cli`, `auth`, `storage`, `formatter`, `api`, `downloader`, `exporter`). No build step required.
 2. **Signed URLs are ephemeral** — File download URLs must be fetched fresh; never cache them
 3. **Backward compatibility** — Default behavior (no new flags) is identical to current behavior
 4. **Project IDs** — Always format `g-p-{32_hex_chars}`
@@ -647,5 +639,7 @@ chatgpt-account-id: {account_id}
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| v1.0 | 2025-03-04 | user | Initial specification |
-| v1.1 | 2026-03-04 | audit-docs | Synced with implementation: updated interactive prompt defaults (y/N), added per-project conversation-index.json to output structure, documented enhanced Markdown rendering (content types, tool messages, deep research headers, project_id frontmatter), clarified model_editable_context is always omitted from Markdown, added file download retry behavior, made hidden-message handling definitive |
+| v0.1.0 | 2025-03-04 | user | Initial specification |
+| v0.1.1 | 2026-03-04 | audit-docs | Synced with implementation: updated interactive prompt defaults (y/N), added per-project conversation-index.json to output structure, documented enhanced Markdown rendering (content types, tool messages, deep research headers, project_id frontmatter), clarified model_editable_context is always omitted from Markdown, added file download retry behavior, made hidden-message handling definitive |
+| v0.1.2 | 2026-03-31 | audit-docs | Corrected CLI flags (§4.1–4.3): replaced planned `--include-projects`/`--download-files` with actual implemented flags (`--no-projects`, `--projects-only`, `--no-files`, `--no-images`, `--no-canvas`, `--no-attachments`, `--verbose`, boolean `--update`); replaced 7 interactive prompts with single bearer token prompt (§4.3); corrected dependencies from "zero" to `commander ^12.0.0` (§2); corrected file download auth header behavior (§13.3); updated architecture description to modular `lib/` layout (§16). |
+| v0.2.0 | 2026-03-31 | user | Software release: projects, files, and deep research export fully implemented; modular `lib/` architecture; Commander.js CLI; enhanced Markdown rendering. Spec reflects shipped state. |

@@ -1,11 +1,13 @@
 # ChatGPT Conversation Exporter
 
+> **Disclaimer:** This is an experimental tool provided as-is, with no guarantees of correctness, reliability, or fitness for any purpose. It accesses ChatGPT's unofficial backend API, which may change or break at any time. By using this tool, you accept all responsibility for how you use it. I make no representations about the legality of exporting your own data in your jurisdiction, whether this use complies with OpenAI's Terms of Service, or any other legal or compliance matters. **Use at your own risk.**
+
 Bulk export all your ChatGPT conversations using the backend API. Works with both personal and Teams accounts. **Resumable** — if your token expires mid-export, just run again with a fresh token and it picks up where it left off.
 
 Supports:
 - **Regular conversations** — your main ChatGPT history
 - **Project conversations** — conversations inside ChatGPT Projects
-- **File downloads** — DALL-E images, user uploads, attachments
+- **File downloads** — DALL-E images, canvas documents, user uploads, attachments
 - **Deep research** — captures async research task results
 - **Enhanced Markdown** — browsing results, reasoning/thinking, tool usage
 
@@ -36,6 +38,12 @@ node export-chatgpt.js --bearer "eyJ..."
 # Teams account
 node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
 ```
+
+> **Security tip:** To avoid your token appearing in shell history or process listings, use an environment variable instead:
+> ```bash
+> export CHATGPT_BEARER_TOKEN="eyJ..."
+> node export-chatgpt.js
+> ```
 
 ### 3. Find Your Exports
 
@@ -72,47 +80,49 @@ The script tracks progress automatically:
 ## Options
 
 ```
---bearer <token>        Bearer/Access token (recommended, required for Teams)
---account-id <id>       ChatGPT Account ID (required for Teams)
---token <token>         Session token (alternative auth, personal accounts only)
---output <dir>          Output directory (default: ./exports)
---format <format>       Export format: json, markdown, or both (default: both)
+--bearer <token>        Bearer/access token (recommended; or set CHATGPT_BEARER_TOKEN env var)
+--token <token>         Session token (alternative auth, personal accounts only; or set CHATGPT_SESSION_TOKEN)
+--account-id <id>       ChatGPT Teams account ID (auto-detected from token when possible)
+-o, --output <dir>      Output directory (default: ./exports)
+--format <format>       Export format: json | markdown | both (default: both)
 --delay <ms>            Delay between API requests in ms (default: 1500)
---update <yes|no>       Re-download existing conversations
---include-projects      Also export project conversations
+--update                Re-download and overwrite existing conversations
+--no-projects           Skip project conversations (projects are exported by default)
 --projects-only         Export only project conversations (skip regular)
---download-files        Download images/attachments from conversations
+--no-files              Skip ALL file downloads
+--no-images             Skip downloading DALL-E images
+--no-canvas             Skip downloading canvas documents
+--no-attachments        Skip downloading other file attachments
+--verbose               Show detailed request/response info
 --help                  Show help message
 ```
 
-You can also set the token via environment variables: `CHATGPT_BEARER_TOKEN` or `CHATGPT_SESSION_TOKEN`.
+### Token via Environment Variables
+
+To avoid tokens appearing in shell history:
+```bash
+export CHATGPT_BEARER_TOKEN="eyJ..."
+export CHATGPT_SESSION_TOKEN="..."   # alternative auth
+node export-chatgpt.js
+```
 
 ### Interactive Mode
 
-When flags are omitted, the script prompts interactively for:
-- Bearer token and account ID
-- Output directory
-- Update mode
-- Export format
-- Whether to include project conversations
-- Whether to download files/images
+The only interactive prompt is the bearer token — if neither `--bearer`, `--token`, nor the corresponding environment variables are provided, the script will prompt you to enter a token.
 
 ## Examples
 
 ```bash
-# Regular conversations only (default)
+# Export everything (conversations, projects, images, canvas, attachments)
 node export-chatgpt.js --bearer "eyJ..."
 
-# Include project conversations
-node export-chatgpt.js --bearer "eyJ..." --include-projects
+# Skip project conversations
+node export-chatgpt.js --bearer "eyJ..." --no-projects
 
-# Only project conversations
-node export-chatgpt.js --bearer "eyJ..." --projects-only
+# Only project conversations, skip file downloads
+node export-chatgpt.js --bearer "eyJ..." --projects-only --no-files
 
-# Download all images and attachments
-node export-chatgpt.js --bearer "eyJ..." --include-projects --download-files
-
-# Export only JSON
+# Export only JSON format
 node export-chatgpt.js --bearer "eyJ..." --format json
 
 # Export to custom directory
@@ -121,11 +131,17 @@ node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
 # Slower requests to avoid rate limiting
 node export-chatgpt.js --bearer "eyJ..." --delay 3000
 
-# Re-download all conversations
-node export-chatgpt.js --bearer "eyJ..." --update yes
+# Re-download all conversations (overwrite existing)
+node export-chatgpt.js --bearer "eyJ..." --update
 
-# Resume after token expiry — just run again
+# Skip images but keep canvas and attachments
+node export-chatgpt.js --bearer "eyJ..." --no-images
+
+# Resume after token expiry — just run again with a fresh token
 node export-chatgpt.js --bearer "fresh-eyJ..."
+
+# Teams account
+node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
 ```
 
 ## Markdown Output
@@ -136,19 +152,32 @@ The Markdown output includes YAML frontmatter and handles multiple content types
 |---|---|
 | Text messages | Standard Markdown |
 | Code results | Fenced code blocks |
-| Images/files | `![image](files/{id}.ext)` links (with `--download-files`) or `[Image: {id}]` |
+| Images/files | `![image](files/{id}.ext)` links or `[Image: {id}]` |
+| Canvas documents | `![image](files/{id}.ext)` links |
 | Browsing results | Blockquote with "Browsing Result" header |
 | Thinking/reasoning (o1/o3) | Collapsible `<details>` block |
 | Reasoning recap | Italic summary |
 | Deep research results | "Assistant (Deep Research: title)" header |
 | Tool messages | Blockquote with tool name |
 
+Example frontmatter:
+```yaml
+---
+title: "My conversation title"
+id: abc123...
+create_time: 2025-01-15T10:30:00.000Z
+update_time: 2025-01-15T11:00:00.000Z
+model: gpt-4o
+project_id: g-abc123...
+---
+```
+
 ## Troubleshooting
 
 ### "Authentication failed" / token expired mid-export
 - Bearer tokens expire quickly — get a fresh one from DevTools
 - Make sure you copied the **entire** token (starts with `eyJ`)
-- For Teams accounts, make sure to include `--account-id`
+- For Teams accounts, make sure to include `--account-id` (or let the tool auto-detect it)
 - Progress is saved automatically, so just re-run with a new token
 
 ### "No conversations found"
@@ -168,8 +197,8 @@ node export-chatgpt.js --bearer "eyJ..." --delay 3000
 1. Uses your Bearer token directly for API authentication (or exchanges a session token for one)
 2. Incrementally fetches the conversation list via `/backend-api/conversations` (28 per page), saving progress after each page
 3. Downloads each conversation's full content via `/backend-api/conversation/{id}`, tracking completed downloads
-4. If `--include-projects` or `--projects-only`: fetches project list via `/backend-api/gizmos/snorlax/sidebar`, then indexes and downloads each project's conversations
-5. If `--download-files`: scans conversation data for `image_asset_pointer` references and downloads via `/backend-api/files/download/{id}`
+4. Fetches the project list via `/backend-api/gizmos/snorlax/sidebar`, then indexes and downloads each project's conversations (use `--no-projects` to skip)
+5. Scans conversation data for file references (`image_asset_pointer`, `canvas_asset_pointer`) and downloads via `/backend-api/files/download/{id}` (use `--no-files` to skip)
 6. Saves to JSON and/or Markdown files
 7. On auth failure, saves all progress and exits — re-running skips already-completed work
 

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I {} sh -c \"echo \"\"==== {} ====\"\" && head -100 \"\"{}\"\"\")",
+      "Bash(node -e \"require\\(''./lib/exporter''\\)\")",
+      "Bash(node -e \"require\\(''./lib/api''\\)\")",
+      "Bash(node -e \"require\\(''./lib/downloader''\\)\")"
+    ]
+  }
+}

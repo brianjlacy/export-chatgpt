@@ -4,7 +4,29 @@ All notable changes to the ChatGPT Conversation Exporter.
 
 ---
 
-## v1.1 — 2026-03-04
+## v0.2.0 — 2026-03-31
+
+Major feature release adding project, file, and deep research export support.
+
+### New Features
+- **Projects** — export all ChatGPT Project conversations; cursor-based pagination via sidebar API; per-project `conversation-index.json` and directory layout
+- **Files** — download DALL-E images, canvas documents, and user-uploaded attachments; deduplication via file ID tracking
+- **Deep research** — captures async research task results embedded in conversations (initiation + result messages)
+- **Enhanced Markdown** — browsing results, reasoning/thinking collapsible `<details>` blocks, tool message rendering, deep research result headers, `project_id` frontmatter
+
+### Architecture
+- Refactored from single-file script to modular `lib/` layout (`config`, `cli`, `auth`, `storage`, `formatter`, `api`, `downloader`, `exporter`)
+- Switched CLI argument parsing to `commander ^12.0.0`
+
+### CLI Changes
+- Added `--no-projects` / `--projects-only` flags for project export control
+- Added `--no-files` / `--no-images` / `--no-canvas` / `--no-attachments` granular file download flags
+- Added `--verbose` flag
+- Reduced interactive prompts to bearer token input only (all other config via flags)
+
+---
+
+## v0.1.1 — 2026-03-04
 
 **Audit sync** — Aligned SPECIFICATION.md and TODO.md with the implemented codebase.
 
@@ -25,6 +47,6 @@ All notable changes to the ChatGPT Conversation Exporter.
 
 ---
 
-## v1.0 — 2025-03-04
+## v0.1.0 — 2025-03-04
 
 Initial SPECIFICATION.md and TODO.md created.

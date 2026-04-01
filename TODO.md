@@ -144,5 +144,6 @@ Implementation plan for adding Projects, Files, and Deep Research export capabil
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| v1.0 | 2025-03-04 | user | Initial TODO plan |
-| v1.1 | 2026-03-04 | audit-docs | Marked Phases 1–7 and documentation tasks complete per implementation. Remaining: optional SSE research stream capture, end-to-end manual testing |
+| v0.1.0 | 2025-03-04 | user | Initial TODO plan |
+| v0.1.1 | 2026-03-04 | audit-docs | Marked Phases 1–7 and documentation tasks complete per implementation. Remaining: optional SSE research stream capture, end-to-end manual testing |
+| v0.2.0 | 2026-03-31 | user | Software release: all Phase 1–7 work shipped. Remaining open items carried forward: optional SSE research stream capture, end-to-end manual testing. |
