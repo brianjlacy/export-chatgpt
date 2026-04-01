@@ -1,8 +1,11 @@
 {
   "name": "chatgpt-exporter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Bulk export ChatGPT conversations via backend API",
   "main": "export-chatgpt.js",
+  "bin": {
+    "export-chatgpt": "./export-chatgpt.js"
+  },
   "scripts": {
     "export": "node export-chatgpt.js",
     "help": "node export-chatgpt.js --help"
@@ -17,5 +20,8 @@
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
   }
 }

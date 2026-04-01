@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { Command } = require('commander');
 
 // Interactive prompt utilities
 function prompt(question) {
@@ -36,10 +37,18 @@ const CONFIG = {
   exportFormat: 'both', // 'json', 'markdown', or 'both'
   accountId: null,
   updateExisting: false,
-  includeProjects: false,
+  includeProjects: true,
   projectsOnly: false,
-  downloadFiles: false,
+  downloadFiles: true,
+  downloadImages: true,
+  downloadCanvas: true,
+  downloadAttachments: true,
+  verbose: false,
 };
+
+function verboseLog(msg) {
+  if (CONFIG.verbose) console.log(msg);
+}
 
 // File paths (set after outputDir is finalized)
 let PATHS = {};
@@ -56,116 +65,64 @@ function initPaths() {
   };
 }
 
-// Parse command line arguments
-function parseArgs() {
-  const args = process.argv.slice(2);
-  let bearerToken = process.env.CHATGPT_BEARER_TOKEN;
-  let sessionToken = process.env.CHATGPT_SESSION_TOKEN;
-  const explicit = { output: false, update: false, format: false, projects: false, files: false };
+// Configure Commander CLI
+function setupCLI() {
+  const pkg = require('./package.json');
+  const program = new Command();
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--bearer' && args[i + 1]) {
-      bearerToken = args[i + 1];
-      i++;
-    } else if (args[i] === '--token' && args[i + 1]) {
-      sessionToken = args[i + 1];
-      i++;
-    } else if (args[i] === '--account-id' && args[i + 1]) {
-      CONFIG.accountId = args[i + 1];
-      i++;
-    } else if (args[i] === '--output' && args[i + 1]) {
-      CONFIG.outputDir = args[i + 1];
-      explicit.output = true;
-      i++;
-    } else if (args[i] === '--format' && args[i + 1]) {
-      CONFIG.exportFormat = args[i + 1];
-      explicit.format = true;
-      i++;
-    } else if (args[i] === '--delay' && args[i + 1]) {
-      CONFIG.delayBetweenRequests = parseInt(args[i + 1], 10);
-      i++;
-    } else if (args[i] === '--update') {
-      explicit.update = true;
-      const next = args[i + 1];
-      if (next && !next.startsWith('--')) {
-        const val = next.toLowerCase();
-        if (['yes', 'true'].includes(val)) {
-          CONFIG.updateExisting = true;
-        } else if (['no', 'false'].includes(val)) {
-          CONFIG.updateExisting = false;
-        }
-        i++;
-      } else {
-        CONFIG.updateExisting = true;
-      }
-    } else if (args[i] === '--include-projects') {
-      CONFIG.includeProjects = true;
-      explicit.projects = true;
-    } else if (args[i] === '--projects-only') {
-      CONFIG.projectsOnly = true;
-      CONFIG.includeProjects = true;
-      explicit.projects = true;
-    } else if (args[i] === '--download-files') {
-      CONFIG.downloadFiles = true;
-      explicit.files = true;
-    } else if (args[i] === '--help') {
-      printHelp();
-      process.exit(0);
-    }
-  }
-
-  return { bearerToken, sessionToken, explicit };
-}
-
-function printHelp() {
-  console.log(`
-ChatGPT Conversation Exporter (Resumable)
-
-Usage: node export-chatgpt.js [options]
-
-Options:
-  --bearer <token>      Bearer/Access token (recommended for Teams)
-  --account-id <id>     ChatGPT Account ID (required for Teams)
-  --token <token>       Session token (alternative auth method)
-  --output <dir>        Output directory (default: ./exports)
-  --format <format>     Export format: json, markdown, or both (default: both)
-  --delay <ms>          Delay between requests in ms (default: 1500)
-  --update <yes|no>     Re-download existing conversations (yes/true/no/false)
-  --include-projects    Also export project conversations
-  --projects-only       Export only project conversations (skip regular)
-  --download-files      Download images/attachments from conversations
-  --help                Show this help message
-
-Interactive:
-  If --bearer, --account-id, --update, or --format are not provided,
-  you will be prompted interactively.
-
+  program
+    .name('export-chatgpt')
+    .description('Bulk export ChatGPT conversations via backend API (resumable)')
+    .version(pkg.version, '-v, --version', 'Output the version number')
+    .option('--bearer <token>', 'Bearer/access token (or set CHATGPT_BEARER_TOKEN env var)')
+    .option('--token <token>', 'Session token — alternative auth (or set CHATGPT_SESSION_TOKEN env var)')
+    .option('--account-id <id>', 'ChatGPT Teams account ID')
+    .option('-o, --output <dir>', 'Output directory', './exports')
+    .option('--format <format>', 'Export format: json | markdown | both', 'both')
+    .option('--delay <ms>', 'Delay between requests in ms', '1500')
+    .option('--update', 'Re-download existing conversations', false)
+    .option('--no-projects', 'Skip project conversations')
+    .option('--projects-only', 'Export only project conversations (skip regular)')
+    .option('--no-images', 'Skip downloading images')
+    .option('--no-canvas', 'Skip downloading canvas documents')
+    .option('--no-attachments', 'Skip downloading other file attachments')
+    .option('--no-files', 'Skip ALL file downloads (overrides --no-images / --no-canvas / --no-attachments)')
+    .option('--verbose', 'Show detailed request/response info and full error messages')
+    .addHelpText('after', `
 Resumable:
-  If interrupted, just run again with a fresh Bearer token.
-  The script will skip already-downloaded conversations.
+  If interrupted, run again with a fresh Bearer token.
+  Already-downloaded conversations are skipped automatically.
 
-How to get your Bearer token (for Teams):
+How to get your Bearer token:
   1. Open https://chatgpt.com with DevTools (F12) > Network tab
-  2. Find a request to "backend-api/conversations"
+  2. Find any request to "backend-api/conversations"
   3. Copy "authorization: Bearer eyJ..." (just the eyJ... part)
-  4. Copy "chatgpt-account-id" header value
+  4. For Teams accounts, also copy the "chatgpt-account-id" header value
 
 Examples:
-  # Regular conversations only (default):
-  node export-chatgpt.js --bearer "eyJ..."
+  # Export everything (conversations, projects, images, canvas, attachments):
+  export-chatgpt --bearer "eyJ..."
 
-  # Regular + project conversations:
-  node export-chatgpt.js --bearer "eyJ..." --include-projects
+  # Skip file downloads entirely:
+  export-chatgpt --bearer "eyJ..." --no-files
 
-  # Only project conversations:
-  node export-chatgpt.js --bearer "eyJ..." --projects-only
+  # Export only project conversations, no images:
+  export-chatgpt --bearer "eyJ..." --projects-only --no-images
 
-  # With file downloads:
-  node export-chatgpt.js --bearer "eyJ..." --include-projects --download-files
+  # Skip projects, re-download existing conversations:
+  export-chatgpt --bearer "eyJ..." --no-projects --update
 
-  # Re-download everything:
-  node export-chatgpt.js --bearer "eyJ..." --update yes
+  # Teams account:
+  export-chatgpt --bearer "eyJ..." --account-id "f3ae362d-..."
 `);
+
+  program.parse();
+  const opts = program.opts();
+
+  const bearerToken = opts.bearer || process.env.CHATGPT_BEARER_TOKEN || null;
+  const sessionToken = opts.token || process.env.CHATGPT_SESSION_TOKEN || null;
+
+  return { opts, bearerToken, sessionToken };
 }
 
 // Create headers with Bearer token for API calls
@@ -191,6 +148,7 @@ async function fetchWithRetry(url, options, retries = 3) {
       const response = await fetch(url, options);
 
       if (response.status === 401 || response.status === 403) {
+        verboseLog(`    Auth error: ${response.status} ${response.statusText} — ${url}`);
         const error = new Error(`Authentication failed (${response.status}). Your Bearer token may be expired.`);
         error.authError = true;
         throw error;
@@ -204,6 +162,7 @@ async function fetchWithRetry(url, options, retries = 3) {
       }
 
       if (!response.ok) {
+        verboseLog(`    HTTP ${response.status} ${response.statusText} — ${url}`);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
@@ -212,8 +171,19 @@ async function fetchWithRetry(url, options, retries = 3) {
       if (error.authError) throw error;
       if (i === retries - 1) throw error;
       console.log(`  Request failed, retrying (${i + 1}/${retries})...`);
+      verboseLog(`    Reason: ${error.message}`);
       await sleep(2000);
     }
+  }
+}
+
+// Extract Teams account ID from a JWT bearer token (avoids manual entry)
+function extractAccountIdFromJWT(token) {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+    return payload?.['https://api.openai.com/auth']?.chatgpt_account_id || null;
+  } catch {
+    return null;
   }
 }
 
@@ -509,7 +479,7 @@ function extractMessageContent(message) {
       if (typeof part === 'string') {
         parts.push(part);
       } else if (part && part.content_type === 'image_asset_pointer') {
-        const fileId = (part.asset_pointer || '').replace('sediment://', '');
+        const fileId = (part.asset_pointer || '').replace(/^(sediment|file-service):\/\//, '');
         if (CONFIG.downloadFiles && fileId) {
           // Try to find extension from metadata
           const ext = guessFileExtension(part);
@@ -693,19 +663,31 @@ function extractFileReferences(conversationData) {
   for (const node of Object.values(conversationData.mapping)) {
     if (!node.message || !node.message.content) continue;
     const content = node.message.content;
-    if (content.content_type !== 'multimodal_text' || !content.parts) continue;
+    const conversationId = conversationData.id || conversationData.conversation_id;
 
-    for (const part of content.parts) {
-      if (part && part.content_type === 'image_asset_pointer' && part.asset_pointer) {
-        const fileId = part.asset_pointer.replace('sediment://', '');
-        if (fileId) {
-          files.push({
-            fileId,
-            conversationId: conversationData.id || conversationData.conversation_id,
-            metadata: part.metadata || {},
-            sizeBytes: part.size_bytes,
-          });
+    // Multimodal messages: images, canvas pointers, and other asset pointers
+    if (content.content_type === 'multimodal_text' && content.parts) {
+      for (const part of content.parts) {
+        if (!part || !part.asset_pointer) continue;
+        const fileId = part.asset_pointer.replace(/^(sediment|file-service):\/\//, '');
+        if (!fileId) continue;
+
+        let type = 'attachment';
+        if (part.content_type === 'image_asset_pointer') {
+          type = 'image';
+        } else if (part.content_type === 'canvas_asset_pointer' || part.content_type === 'canvas') {
+          type = 'canvas';
         }
+
+        files.push({ fileId, conversationId, type, metadata: part.metadata || {}, sizeBytes: part.size_bytes });
+      }
+    }
+
+    // Standalone canvas content type
+    if ((content.content_type === 'canvas' || content.content_type === 'canvas_asset_pointer') && content.asset_pointer) {
+      const fileId = content.asset_pointer.replace(/^(sediment|file-service):\/\//, '');
+      if (fileId) {
+        files.push({ fileId, conversationId, type: 'canvas', metadata: content.metadata || {}, sizeBytes: content.size_bytes });
       }
     }
   }
@@ -721,11 +703,12 @@ async function getFileDownloadUrl(accessToken, fileId, conversationId) {
   return response.json();
 }
 
-async function downloadFile(downloadUrl, outputPath) {
-  // Retry file downloads (signed URLs, no auth headers needed)
+async function downloadFile(downloadUrl, outputPath, accessToken) {
+  // Include auth headers — Teams download URLs require them (not pre-signed public CDN)
+  const headers = accessToken ? createApiHeaders(accessToken) : {};
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(downloadUrl);
+      const response = await fetch(downloadUrl, { headers });
       if (!response.ok) {
         throw new Error(`File download failed: HTTP ${response.status}`);
       }
@@ -747,7 +730,12 @@ function getExtensionFromFilename(fileName) {
 }
 
 async function downloadConversationFiles(accessToken, conversationData, filesDir, progress) {
-  const fileRefs = extractFileReferences(conversationData);
+  const allRefs = extractFileReferences(conversationData);
+  const fileRefs = allRefs.filter(ref => {
+    if (ref.type === 'image') return CONFIG.downloadImages;
+    if (ref.type === 'canvas') return CONFIG.downloadCanvas;
+    return CONFIG.downloadAttachments; // 'attachment' and any future types
+  });
   if (fileRefs.length === 0) return 0;
 
   let downloadedCount = 0;
@@ -757,17 +745,20 @@ async function downloadConversationFiles(accessToken, conversationData, filesDir
     if (progress.downloadedFileIds.includes(ref.fileId)) continue;
 
     try {
+      verboseLog(`    Downloading ${ref.type}: ${ref.fileId}${ref.sizeBytes ? ` (${ref.sizeBytes} bytes)` : ''}`);
       const dlInfo = await getFileDownloadUrl(accessToken, ref.fileId, ref.conversationId);
 
       if (dlInfo.status !== 'success' || !dlInfo.download_url) {
         console.log(`    Warning: Could not get download URL for ${ref.fileId}`);
+        verboseLog(`    Response: ${JSON.stringify(dlInfo)}`);
         continue;
       }
 
       const ext = getExtensionFromFilename(dlInfo.file_name) || guessFileExtension({ metadata: ref.metadata });
       const outputPath = path.join(filesDir, `${ref.fileId}${ext}`);
 
-      await downloadFile(dlInfo.download_url, outputPath);
+      verboseLog(`    Download URL: ${dlInfo.download_url}`);
+      await downloadFile(dlInfo.download_url, outputPath, accessToken);
 
       progress.downloadedFileIds.push(ref.fileId);
       saveProgress(progress);
@@ -1126,7 +1117,8 @@ async function downloadProjectFiles(accessToken, project, progress) {
       const ext = getExtensionFromFilename(dlInfo.file_name || file.name) || '';
       const outputPath = path.join(filesDir, `${fileId}${ext}`);
 
-      await downloadFile(dlInfo.download_url, outputPath);
+      verboseLog(`    Download URL: ${dlInfo.download_url}`);
+      await downloadFile(dlInfo.download_url, outputPath, accessToken);
       progress.downloadedFileIds.push(fileId);
       saveProgress(progress);
       count++;
@@ -1257,6 +1249,7 @@ async function exportConversations(accessToken, progress) {
         throw error;
       }
       console.log(`error: ${error.message}`);
+      verboseLog(`    Failed conversation ID: ${conv.id}`);
       errorCount++;
     }
   }
@@ -1281,6 +1274,9 @@ async function run(accessToken) {
   }
   if (CONFIG.downloadFiles) {
     console.log('File downloads: enabled');
+  }
+  if (CONFIG.verbose) {
+    console.log('Verbose mode: on');
   }
   console.log('');
 
@@ -1374,22 +1370,34 @@ function printSummary(summary) {
 // ── Entry Point ──────────────────────────────────────────────────────
 
 async function main() {
+  let { opts, bearerToken, sessionToken } = setupCLI();
+
+  // Apply Commander opts → CONFIG
+  CONFIG.outputDir = opts.output;
+  CONFIG.exportFormat = opts.format;
+  CONFIG.delayBetweenRequests = parseInt(opts.delay, 10);
+  CONFIG.updateExisting = !!opts.update;
+  CONFIG.includeProjects = opts.projects !== false;
+  CONFIG.projectsOnly = !!opts.projectsOnly;
+  if (CONFIG.projectsOnly) CONFIG.includeProjects = true;
+  const noFiles = opts.files === false;
+  CONFIG.downloadImages = !noFiles && opts.images !== false;
+  CONFIG.downloadCanvas = !noFiles && opts.canvas !== false;
+  CONFIG.downloadAttachments = !noFiles && opts.attachments !== false;
+  CONFIG.downloadFiles = CONFIG.downloadImages || CONFIG.downloadCanvas || CONFIG.downloadAttachments;
+  if (opts.accountId) CONFIG.accountId = opts.accountId;
+  CONFIG.verbose = !!opts.verbose;
+
   console.log('\n ChatGPT Conversation Exporter\n');
   console.log('='.repeat(50) + '\n');
 
-  let { bearerToken, sessionToken, explicit } = parseArgs();
-
-  // Show general instructions for obtaining credentials
-  if (!bearerToken && !sessionToken) {
-    console.log('How to get your Bearer token and Account ID:');
-    console.log('  1. Open https://chatgpt.com with DevTools (F12) > Network tab');
-    console.log('  2. Find a request to "backend-api/conversations"');
-    console.log('');
-  }
-
   // Interactive prompt for bearer token if not provided
   if (!bearerToken && !sessionToken) {
-    console.log('  Copy the "authorization: Bearer eyJ..." value (just the eyJ... part)');
+    console.log('How to get your Bearer token:');
+    console.log('  1. Open https://chatgpt.com with DevTools (F12) > Network tab');
+    console.log('  2. Find any request to "backend-api/conversations"');
+    console.log('  3. Copy "authorization: Bearer eyJ..." (just the eyJ... part)');
+    console.log('');
     bearerToken = await prompt('Enter Bearer token: ');
     if (!bearerToken) {
       console.error('Error: No authentication token provided.');
@@ -1397,71 +1405,15 @@ async function main() {
     }
   }
 
-  // Interactive prompt for account ID if not provided
-  if (!CONFIG.accountId) {
-    console.log('  Copy the "chatgpt-account-id" header value (required for Teams accounts)');
-    const accountId = await prompt('Enter Account ID (leave blank to skip): ');
-    if (accountId) {
-      CONFIG.accountId = accountId;
+  // Auto-detect Teams account ID from JWT if not provided via flag
+  if (!CONFIG.accountId && bearerToken) {
+    const jwtAccountId = extractAccountIdFromJWT(bearerToken);
+    if (jwtAccountId) {
+      CONFIG.accountId = jwtAccountId;
     }
   }
 
-  // Confirm output directory if not explicitly specified
-  if (!explicit.output) {
-    const resolvedDir = path.resolve(CONFIG.outputDir);
-    console.log('');
-    console.log(`  Conversations will be saved to: ${resolvedDir}`);
-    const answer = await prompt('Use this output directory? (Y/n): ');
-    if (answer && answer.toLowerCase() === 'n') {
-      const customDir = await prompt('Enter output directory: ');
-      if (customDir) {
-        CONFIG.outputDir = customDir;
-      } else {
-        console.log('Aborted.');
-        process.exit(0);
-      }
-    }
-  }
-
-  // Interactive prompt for --update if not specified
-  if (!explicit.update) {
-    console.log('');
-    console.log('  Update mode re-downloads conversations that were already exported.');
-    const answer = await prompt('Re-download existing conversations? (y/N): ');
-    CONFIG.updateExisting = answer && answer.toLowerCase() === 'y';
-  }
-
-  // Interactive prompt for --format if not specified
-  if (!explicit.format) {
-    console.log('');
-    console.log('  Export format: json (raw API data), markdown (readable), or both.');
-    console.log('    1) both (default)');
-    console.log('    2) json');
-    console.log('    3) markdown');
-    const answer = await prompt('Choose format [1-3]: ');
-    const formatMap = { '1': 'both', '2': 'json', '3': 'markdown' };
-    CONFIG.exportFormat = formatMap[answer] || 'both';
-  }
-
-  // Interactive prompt for projects if not specified via flags
-  if (!explicit.projects) {
-    console.log('');
-    const answer = await prompt('Export project conversations? (y/N): ');
-    if (answer && answer.toLowerCase() === 'y') {
-      CONFIG.includeProjects = true;
-    }
-  }
-
-  // Interactive prompt for file downloads if not specified via flags
-  if (!explicit.files) {
-    console.log('');
-    const answer = await prompt('Download images/attachments? (y/N): ');
-    if (answer && answer.toLowerCase() === 'y') {
-      CONFIG.downloadFiles = true;
-    }
-  }
-
-  // Initialize paths after parsing args
+  // Initialize paths after all config is final
   initPaths();
 
   let accessToken = bearerToken;
