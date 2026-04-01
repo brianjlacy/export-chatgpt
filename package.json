@@ -8,7 +8,11 @@
   },
   "scripts": {
     "export": "node export-chatgpt.js",
-    "help": "node export-chatgpt.js --help"
+    "help": "node export-chatgpt.js --help",
+    "test": "jest",
+    "test:unit": "jest --testPathPattern='test/unit'",
+    "test:integration": "jest --testPathPattern='test/integration'",
+    "test:e2e": "jest --testPathPattern='test/e2e'"
   },
   "keywords": [
     "chatgpt",
@@ -28,5 +32,8 @@
   ],
   "dependencies": {
     "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }
