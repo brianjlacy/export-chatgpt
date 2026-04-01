@@ -34,7 +34,7 @@ For **Teams accounts**, also copy the `chatgpt-account-id` header value from the
 node export-chatgpt.js --bearer "eyJ..."
 
 # Teams account
-node export-chatgpt.js --bearer "eyJ..." --account-id "f3ae362d-..."
+node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
 ```
 
 ### 3. Find Your Exports

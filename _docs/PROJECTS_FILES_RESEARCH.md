@@ -53,7 +53,7 @@ GET /backend-api/gizmos/snorlax/sidebar?owned_only=true&conversations_per_gizmo=
             "name": "Qwandery Platform",
             "description": ""
           },
-          "workspace_id": "f3ae362d-0323-4510-aee0-7bcc836d4307",
+          "workspace_id": "cc47585e-b2fe-4e7d-ac6a-ced32852f07b",
           "created_at": "2025-11-21T16:20:54.917441+00:00",
           "updated_at": "2025-11-21T16:20:55.832364+00:00",
           "instructions": "Project instructions here...",
@@ -132,11 +132,11 @@ GET /backend-api/gizmos/g-p-69209166eacc81918dc596f8dd06a034/conversations?curso
       "update_time": "2025-08-17T20:49:57.087149Z",
       "gizmo_id": "g-p-67c1f3e262b88191b3dacb70c6d68354",
       "conversation_template_id": "g-p-67c1f3e262b88191b3dacb70c6d68354",
-      "workspace_id": "f3ae362d-0323-4510-aee0-7bcc836d4307",
+      "workspace_id": "cc47585e-b2fe-4e7d-ac6a-ced32852f07b",
       "is_archived": false,
       "snippet": "Preview text of the conversation...",
       "owner": {
-        "user_id": "user-8yqSwKy8G9WZVPxDvgi1VwbZ__f3ae362d-...",
+        "user_id": "user-8yqSwKy8G9WZVPxDvgi1VwbZ__cc47585e-...",
         "user_email": "brian@qwandery.com",
         "name": "Brian Lacy"
       }
@@ -210,7 +210,7 @@ GET /backend-api/files/download/file_00000000842871f5b6a1bab8e3499232?conversati
 {
   "status": "success",
   "download_url": "https://chatgpt.com/backend-api/estuary/content?id=file_00000000842871f5b6a1bab8e3499232&ts=492403&p=fs&cid=1&sig=0ef4152f6c70d8f60b1887bf9469862647a9f906eefc13397df7f93be756ab73&v=0",
-  "file_name": "user-8yqSwKy8G9WZVPxDvgi1VwbZ__f3ae362d-0323-4510-aee0-7bcc836d4307/941d4670-0d4f-4bb2-901f-89aaabc66988.png",
+  "file_name": "user-8yqSwKy8G9WZVPxDvgi1VwbZ__cc47585e-b2fe-4e7d-ac6a-ced32852f07b/941d4670-0d4f-4bb2-901f-89aaabc66988.png",
   "file_size_bytes": 305531
 }
 ```

@@ -50,7 +50,7 @@ A Node.js CLI tool that bulk-exports all ChatGPT conversations via the ChatGPT b
 
 - Header: `chatgpt-account-id: {account_id}`
 - Required for Teams workspaces, optional for personal accounts
-- Format: UUID (e.g., `f3ae362d-0323-4510-aee0-7bcc836d4307`)
+- Format: UUID (e.g., `cc47585e-b2fe-4e7d-ac6a-ced32852f07b`)
 
 ### 3.4 Token Sources (Priority Order)
 

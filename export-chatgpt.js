@@ -8,7 +8,7 @@
  * and deep research results. Resumable across token expirations.
  *
  * Usage:
- *   node export-chatgpt.js --bearer "eyJ..." --account-id "f3ae362d-..."
+ *   node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
  */
 
 const fs = require('fs');
@@ -94,10 +94,11 @@ Resumable:
   Already-downloaded conversations are skipped automatically.
 
 How to get your Bearer token:
-  1. Open https://chatgpt.com with DevTools (F12) > Network tab
-  2. Find any request to "backend-api/conversations"
-  3. Copy "authorization: Bearer eyJ..." (just the eyJ... part)
-  4. For Teams accounts, also copy the "chatgpt-account-id" header value
+  1. Open https://chatgpt.com with DevTools (F12) > Network tab.
+  2. Filter for "backend-api/conversations" -- you may need to refresh the page!
+  3. Click on one of the Url entries, go to the "Headers" section, and find the "Authorization" header under "Request Headers".
+  4. Copy the Bearer token from the "Authorization" header (just the part AFTER 'Bearer' -- the long string of characters starting with 'eyJ...').
+  5. If you're a Teams/Business user, you will need your Account Id as well; however, by default the script will attempt to extract it from your. If that fails you can also copy it from the "Chatgpt-Account-Id" Header and provide it with the --account-id option.
 
 Examples:
   # Export everything (conversations, projects, images, canvas, attachments):
@@ -113,7 +114,7 @@ Examples:
   export-chatgpt --bearer "eyJ..." --no-projects --update
 
   # Teams account:
-  export-chatgpt --bearer "eyJ..." --account-id "f3ae362d-..."
+  export-chatgpt --bearer "eyJ..." --account-id "cc47585e-..."
 `);
 
   program.parse();
