@@ -52,9 +52,9 @@ describe('config', () => {
       expect(PATHS.projectsDir).toContain('projects');
       expect(PATHS.projectIndexFile).toContain('project-index.json');
 
-      // All paths should start with the output dir
+      // All paths should contain the output dir base name (cross-platform)
       for (const val of Object.values(PATHS)) {
-        expect(val).toMatch(/^\/tmp\/test-export/);
+        expect(val).toContain('test-export');
       }
     });
   });

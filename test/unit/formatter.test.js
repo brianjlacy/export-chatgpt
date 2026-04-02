@@ -380,4 +380,100 @@ describe('formatter', () => {
       expect(md).toContain('# Empty');
     });
   });
+
+  describe('mimeToExtension', () => {
+    test('maps common image MIME types', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('image/png')).toBe('.png');
+      expect(mimeToExtension('image/jpeg')).toBe('.jpg');
+      expect(mimeToExtension('image/gif')).toBe('.gif');
+      expect(mimeToExtension('image/webp')).toBe('.webp');
+      expect(mimeToExtension('image/svg+xml')).toBe('.svg');
+    });
+
+    test('maps document MIME types', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('application/pdf')).toBe('.pdf');
+      expect(mimeToExtension('application/json')).toBe('.json');
+      expect(mimeToExtension('application/zip')).toBe('.zip');
+      expect(mimeToExtension('text/html')).toBe('.html');
+      expect(mimeToExtension('text/plain')).toBe('.txt');
+      expect(mimeToExtension('text/csv')).toBe('.csv');
+    });
+
+    test('returns empty string for unknown MIME type', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('application/octet-stream')).toBe('');
+      expect(mimeToExtension('video/mp4')).toBe('');
+    });
+
+    test('strips parameters from content-type (e.g. charset)', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension('image/png; charset=utf-8')).toBe('.png');
+      expect(mimeToExtension('text/plain; charset=utf-8')).toBe('.txt');
+    });
+
+    test('returns empty string for null/undefined', () => {
+      const { mimeToExtension } = load();
+      expect(mimeToExtension(null)).toBe('');
+      expect(mimeToExtension(undefined)).toBe('');
+    });
+  });
+
+  describe('guessFileExtension', () => {
+    test('returns .png for DALL-E generated images', () => {
+      const { guessFileExtension } = load();
+      const part = { metadata: { dalle: { prompt: 'test' } } };
+      expect(guessFileExtension(part)).toBe('.png');
+    });
+
+    test('returns .png as default fallback', () => {
+      const { guessFileExtension } = load();
+      expect(guessFileExtension({ metadata: {} })).toBe('.png');
+      expect(guessFileExtension({})).toBe('.png');
+    });
+  });
+
+  describe('extractMessageContent - additional types', () => {
+    test('returns thoughts content wrapped in details block', () => {
+      const { extractMessageContent } = load();
+      const msg = {
+        content: { content_type: 'thoughts', parts: ['I am thinking...'] },
+        metadata: {},
+      };
+      const result = extractMessageContent(msg);
+      expect(result).toContain('<details>');
+      expect(result).toContain('Thinking');
+      expect(result).toContain('I am thinking...');
+    });
+
+    test('returns reasoning_recap content in italics', () => {
+      const { extractMessageContent } = load();
+      const msg = {
+        content: { content_type: 'reasoning_recap', parts: ['My recap'] },
+        metadata: {},
+      };
+      const result = extractMessageContent(msg);
+      expect(result).toContain('*Reasoning recap:');
+      expect(result).toContain('My recap');
+    });
+
+    test('returns empty string for model_editable_context', () => {
+      const { extractMessageContent } = load();
+      const msg = {
+        content: { content_type: 'model_editable_context', parts: ['system stuff'] },
+        metadata: {},
+      };
+      expect(extractMessageContent(msg)).toBe('');
+    });
+
+    test('returns empty string when is_visually_hidden_from_conversation is true', () => {
+      const { extractMessageContent } = load();
+      const msg = {
+        content: { content_type: 'text', parts: ['hidden'] },
+        metadata: { is_visually_hidden_from_conversation: true },
+      };
+      expect(extractMessageContent(msg)).toBe('');
+    });
+  });
 });
