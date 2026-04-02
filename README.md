@@ -17,6 +17,8 @@ Supports:
 
 ## Quick Start
 
+> **Important:** If you have multiple ChatGPT accounts, make sure you're only logged into the one you want to export. Being logged into more than one account at the same time can cause ChatGPT to return data from the wrong account.
+
 ### 1. Get Your Bearer Token
 
 1. Open https://chatgpt.com in your browser and make sure you're logged in
