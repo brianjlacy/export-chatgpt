@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-exporter",
+  "name": "@qwanderer/chatgpt-exporter",
   "version": "0.2.0",
   "description": "Bulk export ChatGPT conversations via backend API",
   "main": "export-chatgpt.js",
