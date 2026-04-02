@@ -34,15 +34,15 @@ describe('CLI failure cases', () => {
     expect(exitCode).not.toBe(0);
   });
 
-  test('invalid --delay shows warning but continues', () => {
-    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--delay', 'abc']);
-    expect(stdout).toContain('Invalid --delay');
-    expect(stdout).toContain('1500ms');
+  test('invalid --throttle shows warning but continues', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--throttle', 'abc']);
+    expect(stdout).toContain('Invalid --throttle');
+    expect(stdout).toContain('60s');
   });
 
-  test('negative --delay shows warning', () => {
-    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--delay', '-5']);
-    expect(stdout).toContain('Invalid --delay');
+  test('negative --throttle shows warning', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--throttle', '-5']);
+    expect(stdout).toContain('Invalid --throttle');
   });
 
   test('unknown flags produce error', () => {

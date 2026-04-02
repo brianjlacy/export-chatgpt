@@ -29,7 +29,7 @@ describe('CLI flag parsing', () => {
     expect(stdout).toContain('export-chatgpt');
     expect(stdout).toContain('--bearer');
     expect(stdout).toContain('--format');
-    expect(stdout).toContain('--delay');
+    expect(stdout).toContain('--throttle');
   });
 
   test('--version shows version number', () => {
@@ -79,9 +79,9 @@ describe('CLI flag parsing', () => {
     expect(stdout).not.toContain('Enter Bearer token');
   });
 
-  test('--delay validates numeric input', () => {
-    const { stdout } = run(['--bearer', 'fake', '--delay', 'notanumber', '--non-interactive']);
-    expect(stdout).toContain('Invalid --delay');
+  test('--throttle validates numeric input', () => {
+    const { stdout } = run(['--bearer', 'fake', '--throttle', 'notanumber', '--non-interactive']);
+    expect(stdout).toContain('Invalid --throttle');
   });
 
   test('all file skip flags are recognized', () => {
@@ -90,6 +90,28 @@ describe('CLI flag parsing', () => {
     expect(stdout).toContain('--no-canvas');
     expect(stdout).toContain('--no-attachments');
     expect(stdout).toContain('--no-files');
+  });
+
+  test('--help shows --max flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--max');
+  });
+
+  test('--help shows --conv flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--conv');
+  });
+
+  test('--help shows --proj flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--proj');
+  });
+
+  test('-N shorthand works like --max N', () => {
+    // -3 should be converted to --max 3; will fail on API but not on flag parsing
+    const { stdout, exitCode } = run(['-3', '--bearer', 'fake', '--non-interactive']);
+    // Should not error with "unknown option"
+    expect(stdout).not.toContain('unknown option');
   });
 });
 
@@ -120,5 +142,21 @@ describe('CLI config propagation', () => {
   test('does not show file downloads when --no-files is passed', () => {
     const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--no-files']);
     expect(stdout).not.toContain('File downloads: enabled');
+  });
+
+  test('shows max session message when --max is passed', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--max', '5']);
+    expect(stdout).toContain('Max this session');
+    expect(stdout).toContain('5');
+  });
+
+  test('shows conversation filter message when --conv is passed', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--conv', 'abc-123,def-456']);
+    expect(stdout).toContain('Conversation filter');
+  });
+
+  test('shows project filter message when --proj is passed', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--proj', 'proj-111']);
+    expect(stdout).toContain('Project filter');
   });
 });
