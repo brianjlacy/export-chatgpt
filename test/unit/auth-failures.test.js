@@ -1,5 +1,11 @@
 'use strict';
 
+// Mock sleep so retry/backoff delays don't slow tests down
+jest.mock('../../lib/config', () => {
+  const actual = jest.requireActual('../../lib/config');
+  return { ...actual, sleep: jest.fn().mockResolvedValue(undefined) };
+});
+
 describe('auth failure cases', () => {
   let CONFIG, fetchWithRetry, getAccessToken;
 

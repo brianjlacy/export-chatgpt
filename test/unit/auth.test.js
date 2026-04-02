@@ -1,5 +1,11 @@
 'use strict';
 
+// Mock sleep so retry/backoff delays don't slow tests down
+jest.mock('../../lib/config', () => {
+  const actual = jest.requireActual('../../lib/config');
+  return { ...actual, sleep: jest.fn().mockResolvedValue(undefined) };
+});
+
 describe('auth', () => {
   let CONFIG, createApiHeaders, extractAccountIdFromJWT;
 
@@ -162,6 +168,82 @@ describe('auth', () => {
       await expect(fetchWithRetry('https://example.com', {}, 2))
         .rejects.toThrow('HTTP 500');
       global.fetch.mockRestore();
+    });
+  });
+
+  describe('extractUserIdFromJWT', () => {
+    let extractUserIdFromJWT;
+
+    beforeEach(() => {
+      jest.resetModules();
+      ({ extractUserIdFromJWT } = require('../../lib/auth'));
+    });
+
+    function makeJWT(payload) {
+      const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
+      const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      return `${header}.${body}.signature`;
+    }
+
+    test('returns chatgpt_user_id from OpenAI auth namespace', () => {
+      const token = makeJWT({
+        'https://api.openai.com/auth': { chatgpt_user_id: 'user-abc123' },
+      });
+      expect(extractUserIdFromJWT(token)).toBe('user-abc123');
+    });
+
+    test('falls back to user_id when chatgpt_user_id is absent', () => {
+      const token = makeJWT({
+        'https://api.openai.com/auth': { user_id: 'user-fallback' },
+      });
+      expect(extractUserIdFromJWT(token)).toBe('user-fallback');
+    });
+
+    test('returns null when auth namespace is missing', () => {
+      const token = makeJWT({ sub: 'google-oauth2|12345' });
+      expect(extractUserIdFromJWT(token)).toBeNull();
+    });
+
+    test('returns null when both user ID fields are absent', () => {
+      const token = makeJWT({
+        'https://api.openai.com/auth': { chatgpt_plan_type: 'pro' },
+      });
+      expect(extractUserIdFromJWT(token)).toBeNull();
+    });
+
+    test('returns null for malformed token', () => {
+      expect(extractUserIdFromJWT('not.a.jwt')).toBeNull();
+      expect(extractUserIdFromJWT('garbage')).toBeNull();
+      expect(extractUserIdFromJWT('')).toBeNull();
+    });
+  });
+
+  describe('throttle', () => {
+    let throttle;
+
+    beforeEach(() => {
+      jest.resetModules();
+      jest.spyOn(process.stdout, 'write').mockImplementation();
+      ({ CONFIG } = require('../../lib/config'));
+      ({ throttle } = require('../../lib/auth'));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('returns immediately when throttleMs is 0', async () => {
+      CONFIG.throttleMs = 0;
+      const start = Date.now();
+      await throttle();
+      expect(Date.now() - start).toBeLessThan(50);
+    });
+
+    test('returns immediately on first call (no prior request)', async () => {
+      CONFIG.throttleMs = 60000; // 60s would block if not first call
+      const start = Date.now();
+      await throttle(); // first call — no prior request, so no wait
+      expect(Date.now() - start).toBeLessThan(100);
     });
   });
 });
