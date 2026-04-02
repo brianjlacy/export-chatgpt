@@ -18,7 +18,7 @@ describe('downloader failure cases', () => {
     CONFIG.downloadImages = true;
     CONFIG.downloadCanvas = true;
     CONFIG.downloadAttachments = true;
-    CONFIG.delayBetweenRequests = 0;
+    CONFIG.throttleMs = 0;
     CONFIG.verbose = false;
     require('../../lib/config').initPaths();
   });

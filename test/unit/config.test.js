@@ -13,7 +13,7 @@ describe('config', () => {
       expect(CONFIG.baseUrl).toBe('https://chatgpt.com');
       expect(CONFIG.apiBase).toBe('https://chatgpt.com/backend-api');
       expect(CONFIG.outputDir).toBe('./exports');
-      expect(CONFIG.delayBetweenRequests).toBe(1500);
+      expect(CONFIG.throttleMs).toBe(60000);
       expect(CONFIG.conversationsPerPage).toBe(28);
       expect(CONFIG.exportFormat).toBe('both');
       expect(CONFIG.accountId).toBeNull();
@@ -28,6 +28,9 @@ describe('config', () => {
       expect(CONFIG.nonInteractive).toBe(false);
       expect(CONFIG.showSummary).toBe(true);
       expect(CONFIG.showDonate).toBe(true);
+      expect(CONFIG.maxConversations).toBeNull();
+      expect(CONFIG.convFilter).toBeNull();
+      expect(CONFIG.projFilter).toBeNull();
     });
 
     test('CONFIG is mutable', () => {
