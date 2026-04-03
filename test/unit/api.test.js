@@ -42,8 +42,8 @@ describe('api', () => {
     };
   }
 
-  function makeConv(id, update_time) {
-    return { id, title: `Chat ${id}`, create_time: 1700000000, update_time };
+  function makeConv(id, create_time, update_time = 1775000000) {
+    return { id, title: `Chat ${id}`, create_time, update_time };
   }
 
   function mockFetchPages(pages) {
@@ -151,7 +151,7 @@ describe('api', () => {
       expect(result.size).toBe(29); // 28 new + 1 existing
     });
 
-    test('skips already-indexed conversations with update_time > since', async () => {
+    test('skips already-indexed conversations with create_time > since', async () => {
       const existingIndex = new Map([
         ['conv-known', makeConv('conv-known', 1700002000)],
         ['conv-old', makeConv('conv-old', 1700001000)],
@@ -161,7 +161,7 @@ describe('api', () => {
       mockFetchPages([
         {
           items: [
-            makeConv('conv-known', 1700002500), // updated, already in index
+            makeConv('conv-known', 1700002500), // already in index (create_time > since but known)
             makeConv('conv-old', 1700001000),   // watermark
           ],
           total: 2, limit: 28, offset: 0,
@@ -206,7 +206,7 @@ describe('api', () => {
       expect(indexWrites.length).toBeGreaterThan(0);
     });
 
-    test('handles ISO string update_time correctly as watermark', async () => {
+    test('handles ISO string create_time correctly as watermark', async () => {
       const existingIndex = new Map([
         ['conv-1', makeConv('conv-1', '2023-11-15T00:00:00.000Z')], // ISO string
       ]);
