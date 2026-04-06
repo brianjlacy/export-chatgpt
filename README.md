@@ -24,8 +24,8 @@ Supports:
 1. Open https://chatgpt.com in your browser and make sure you're logged in
 2. Open DevTools (F12) → **Network** tab
 3. Refresh the page or click on a conversation
-4. Find a request to `backend-api/conversations`
-5. Copy the `authorization: Bearer eyJ...` header value (just the `eyJ...` part)
+4. Filter requests for `backend-api/conversations`
+5. Click on a matching request, find the **Authorization** header under Request Headers, and copy the token (just the `eyJ...` part after `Bearer`)
 
 For **Teams accounts**, also copy the `chatgpt-account-id` header value from the same request.
 
@@ -34,25 +34,21 @@ For **Teams accounts**, also copy the `chatgpt-account-id` header value from the
 ### 2. Run the Export
 
 ```bash
-# Personal account
-node export-chatgpt.js --bearer "eyJ..."
-
-# Teams account
-node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..."
 ```
 
-> **Security tip:** To avoid your token appearing in shell history or process listings, use an environment variable instead:
+> **Security tip:** To avoid your token appearing in shell history, use an environment variable:
 > ```bash
 > export CHATGPT_BEARER_TOKEN="eyJ..."
-> node export-chatgpt.js
+> npx @qwanderer/chatgpt-exporter
 > ```
 
 ### 3. Find Your Exports
 
-Conversations are saved to `./exports/`:
+By default, conversations are saved to `./exports/{user_id}`:
 
 ```
-exports/
+exports/{user_id}
 ├── json/                          # Regular conversation JSON
 │   └── {date}_{title}_{id}.json
 ├── markdown/                      # Regular conversation Markdown
@@ -74,7 +70,7 @@ Files are named with the pattern `{date}_{title}_{id}.{ext}`.
 ## Resumable Exports
 
 The script tracks progress automatically:
-- `exports/.export-progress.json` stores which conversations have been downloaded and where indexing left off
+- `exports/{user_id}/.export-progress.json` stores which conversations have been downloaded and where indexing left off
 - If your token expires mid-export, the script saves progress and exits gracefully
 - Just run again with a fresh Bearer token — already-downloaded conversations are skipped
 - The conversation index is also built incrementally, resuming from the last page fetched
@@ -82,21 +78,45 @@ The script tracks progress automatically:
 ## Options
 
 ```
---bearer <token>        Bearer/access token (recommended; or set CHATGPT_BEARER_TOKEN env var)
---token <token>         Session token (alternative auth, personal accounts only; or set CHATGPT_SESSION_TOKEN)
---account-id <id>       ChatGPT Teams account ID (auto-detected from token when possible)
--o, --output <dir>      Output directory (default: ./exports)
---format <format>       Export format: json | markdown | both (default: both)
---delay <ms>            Delay between API requests in ms (default: 1500)
---update                Re-download and overwrite existing conversations
---no-projects           Skip project conversations (projects are exported by default)
---projects-only         Export only project conversations (skip regular)
---no-files              Skip ALL file downloads
---no-images             Skip downloading DALL-E images
---no-canvas             Skip downloading canvas documents
---no-attachments        Skip downloading other file attachments
---verbose               Show detailed request/response info
---help                  Show help message
+Authentication:
+  --bearer <token>           Bearer/access token (or set CHATGPT_BEARER_TOKEN env var)
+  --token <token>            Session token — alternative auth, personal accounts only
+                             (or set CHATGPT_SESSION_TOKEN env var)
+  --account-id <id>          ChatGPT Teams account ID (auto-detected from token when possible)
+
+Output:
+  -o, --output <dir>         Output directory (default: ./exports)
+  --format <format>          Export format: json | markdown | both (default: both)
+  --no-user-dir              Do not nest exports inside a user ID subdirectory
+
+Throttling:
+  --throttle <seconds>       Minimum time between API requests in seconds (default: 60)
+
+Filtering:
+  --max <n>                  Only download the next N conversations this session (also -N, e.g. -7)
+  --conv <ids>               Only download specific conversation ID(s), comma-separated
+  --proj <ids>               Only download specific project ID(s), comma-separated
+
+Behavior:
+  --update                   Re-download and overwrite existing conversations
+  --no-projects              Skip project conversations (projects are exported by default)
+  --projects-only            Export only project conversations (skip regular)
+
+File downloads:
+  --no-files                 Skip ALL file downloads
+  --no-images                Skip downloading DALL-E images
+  --no-canvas                Skip downloading canvas documents
+  --no-attachments           Skip downloading other file attachments
+
+Interaction:
+  -n, --non-interactive      Run without any interactive prompts (requires --bearer or --token)
+  --no-summary               Suppress the export summary at the end
+  --no-donate                Suppress the donation message/prompt
+  --verbose                  Show detailed request/response info
+
+Metadata:
+  -v, --version              Show version number
+  --help                     Show help message
 ```
 
 ### Token via Environment Variables
@@ -105,7 +125,7 @@ To avoid tokens appearing in shell history:
 ```bash
 export CHATGPT_BEARER_TOKEN="eyJ..."
 export CHATGPT_SESSION_TOKEN="..."   # alternative auth
-node export-chatgpt.js
+npx @qwanderer/chatgpt-exporter
 ```
 
 ### Interactive Mode
@@ -116,34 +136,45 @@ The only interactive prompt is the bearer token — if neither `--bearer`, `--to
 
 ```bash
 # Export everything (conversations, projects, images, canvas, attachments)
-node export-chatgpt.js --bearer "eyJ..."
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..."
 
 # Skip project conversations
-node export-chatgpt.js --bearer "eyJ..." --no-projects
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --no-projects
 
 # Only project conversations, skip file downloads
-node export-chatgpt.js --bearer "eyJ..." --projects-only --no-files
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --projects-only --no-files
 
 # Export only JSON format
-node export-chatgpt.js --bearer "eyJ..." --format json
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --format json
 
 # Export to custom directory
-node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --output ~/Documents/chatgpt-backup
+
+# Limit to 10 conversations this session
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --max 10
+# or use the shorthand:
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." -10
+
+# Download only specific conversations
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --conv "id1,id2,id3"
 
 # Slower requests to avoid rate limiting
-node export-chatgpt.js --bearer "eyJ..." --delay 3000
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --throttle 90
 
 # Re-download all conversations (overwrite existing)
-node export-chatgpt.js --bearer "eyJ..." --update
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --update
 
 # Skip images but keep canvas and attachments
-node export-chatgpt.js --bearer "eyJ..." --no-images
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --no-images
 
 # Resume after token expiry — just run again with a fresh token
-node export-chatgpt.js --bearer "fresh-eyJ..."
+npx @qwanderer/chatgpt-exporter --bearer "fresh-eyJ..."
 
-# Teams account
-node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
+# Teams account (auto-detected, or specify explicitly)
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --account-id "cc47585e-..."
+
+# Non-interactive mode (for scripts/CI)
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --non-interactive
 ```
 
 ## Markdown Output
@@ -189,9 +220,9 @@ This likely means one of:
 - The account genuinely has no conversations
 
 ### Rate limiting
-If you see 429 errors, the script will automatically wait and retry. You can also increase the delay:
+If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
-node export-chatgpt.js --bearer "eyJ..." --delay 3000
+npx @qwanderer/chatgpt-exporter --bearer "eyJ..." --throttle 90
 ```
 
 ## How It Works
