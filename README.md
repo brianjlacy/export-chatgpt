@@ -29,7 +29,15 @@ Supports:
 
 > **Warning:** Bearer tokens can expire quickly — you may want to get a fresh one each time you run the export.
 
-### 2. Run the Export
+### 2. Using the Exporter
+
+**Setup:**
+
+```bash
+npm install
+```
+
+**Run:**
 
 ```bash
 npx export-chatgpt
