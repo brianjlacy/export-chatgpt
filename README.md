@@ -104,11 +104,10 @@ The script tracks progress automatically:
 
 ### Token via Environment Variables
 
-To avoid tokens appearing in shell history:
+To avoid having to paste your token each time:
 ```bash
 export CHATGPT_BEARER_TOKEN="eyJ..."
-export CHATGPT_SESSION_TOKEN="..."   # alternative auth
-node export-chatgpt.js
+npx export-chatgpt
 ```
 
 ### Interactive Mode
@@ -119,34 +118,34 @@ The only interactive prompt is the bearer token — if neither `--bearer`, `--to
 
 ```bash
 # Export everything (conversations, projects, images, canvas, attachments)
-node export-chatgpt.js --bearer "eyJ..."
+npx export-chatgpt --bearer "eyJ..."
 
 # Skip project conversations
-node export-chatgpt.js --bearer "eyJ..." --no-projects
+npx export-chatgpt --bearer "eyJ..." --no-projects
 
 # Only project conversations, skip file downloads
-node export-chatgpt.js --bearer "eyJ..." --projects-only --no-files
+npx export-chatgpt --bearer "eyJ..." --projects-only --no-files
 
 # Export only JSON format
-node export-chatgpt.js --bearer "eyJ..." --format json
+npx export-chatgpt --bearer "eyJ..." --format json
 
 # Export to custom directory
-node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
+npx export-chatgpt --bearer "eyJ..." --output ~/Documents/chatgpt-backup
 
 # Slower requests to avoid rate limiting
-node export-chatgpt.js --bearer "eyJ..." --throttle 90
+npx export-chatgpt --bearer "eyJ..." --throttle 90
 
 # Re-download all conversations (overwrite existing)
-node export-chatgpt.js --bearer "eyJ..." --update
+npx export-chatgpt --bearer "eyJ..." --update
 
 # Skip images but keep canvas and attachments
-node export-chatgpt.js --bearer "eyJ..." --no-images
+npx export-chatgpt --bearer "eyJ..." --no-images
 
 # Resume after token expiry — just run again with a fresh token
-node export-chatgpt.js --bearer "fresh-eyJ..."
+npx export-chatgpt --bearer "fresh-eyJ..."
 
 # Teams account
-node export-chatgpt.js --bearer "eyJ..." --account-id "cc47585e-..."
+npx export-chatgpt --bearer "eyJ..." --account-id "cc47585e-..."
 ```
 
 ## Markdown Output
@@ -194,7 +193,7 @@ This likely means one of:
 ### Rate limiting
 If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
-node export-chatgpt.js --bearer "eyJ..." --throttle 90
+npx export-chatgpt --bearer "eyJ..." --throttle 90
 ```
 
 ## How It Works
