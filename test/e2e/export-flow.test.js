@@ -442,7 +442,7 @@ describe('export flow (e2e)', () => {
       expect(listFetches).toHaveLength(1);
 
       const logs = console.log.mock.calls.map(c => c[0]).join('\n');
-      expect(logs).toContain('up to date');
+      expect(logs).toContain('(0 new)');
 
       global.fetch.mockRestore();
     });

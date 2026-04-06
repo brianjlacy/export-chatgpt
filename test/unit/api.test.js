@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 describe('api', () => {
-  let CONFIG, PATHS, initPaths, fetchNewConversations, fetchConversationListIncremental;
+  let CONFIG, PATHS, initPaths, fetchConversationListIncremental;
   let tmpDir;
 
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('api', () => {
     CONFIG.conversationsPerPage = 28;
     initPaths();
 
-    ({ fetchNewConversations, fetchConversationListIncremental } = require('../../lib/api'));
+    ({ fetchConversationListIncremental } = require('../../lib/api'));
   });
 
   afterEach(() => {
@@ -42,8 +42,8 @@ describe('api', () => {
     };
   }
 
-  function makeConv(id, create_time, update_time = 1775000000) {
-    return { id, title: `Chat ${id}`, create_time, update_time };
+  function makeConv(id, update_time) {
+    return { id, title: `Chat ${id}`, create_time: 1700000000, update_time };
   }
 
   function mockFetchPages(pages) {
@@ -59,136 +59,46 @@ describe('api', () => {
     });
   }
 
-  describe('fetchNewConversations', () => {
-    test('returns existing index unchanged when first page is entirely <= since', async () => {
-      const existingIndex = new Map([
-        ['conv-1', makeConv('conv-1', 1700002000)],
-      ]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        { items: [makeConv('conv-1', 1700002000)], total: 1, limit: 28, offset: 0 },
-      ]);
-
-      const result = await fetchNewConversations('token', existingIndex, progress);
-
-      expect(result.size).toBe(1);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-    });
-
-    test('logs "up to date" when no new conversations found', async () => {
-      const existingIndex = new Map([['conv-1', makeConv('conv-1', 1700002000)]]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        { items: [makeConv('conv-1', 1700002000)], total: 1, limit: 28, offset: 0 },
-      ]);
-
-      await fetchNewConversations('token', existingIndex, progress);
-
-      const logs = console.log.mock.calls.map(c => c[0]).join('\n');
-      expect(logs).toContain('up to date');
-    });
-
-    test('adds new conversations whose update_time > since', async () => {
-      const existingIndex = new Map([
-        ['conv-old', makeConv('conv-old', 1700001000)],
-      ]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        {
-          items: [
-            makeConv('conv-new', 1700002000), // newer than since (1700001000)
-            makeConv('conv-old', 1700001000), // at watermark — stop
-          ],
-          total: 2, limit: 28, offset: 0,
-        },
-      ]);
-
-      const result = await fetchNewConversations('token', existingIndex, progress);
-
-      expect(result.size).toBe(2);
-      expect(result.has('conv-new')).toBe(true);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-    });
-
-    test('stops mid-page at watermark and does not advance to next page', async () => {
-      const existingIndex = new Map([
-        ['conv-1', makeConv('conv-1', 1700001000)],
-      ]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        {
-          items: [makeConv('conv-new', 1700002000), makeConv('conv-1', 1700001000)],
-          total: 2, limit: 28, offset: 0,
-        },
-        // This second page should never be fetched
-        { items: [makeConv('conv-other', 1700000500)], total: 1, limit: 28, offset: 28 },
-      ]);
-
-      await fetchNewConversations('token', existingIndex, progress);
-
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-    });
-
-    test('fetches a second page when first full page is all > since', async () => {
-      const convs28 = Array.from({ length: 28 }, (_, i) =>
-        makeConv(`conv-new-${i}`, 1700003000 + i)
-      );
-      const existingIndex = new Map([['conv-old', makeConv('conv-old', 1700001000)]]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        { items: convs28, total: 29, limit: 28, offset: 0 },
-        { items: [makeConv('conv-old', 1700001000)], total: 1, limit: 28, offset: 28 },
-      ]);
-
-      const result = await fetchNewConversations('token', existingIndex, progress);
-
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-      expect(result.size).toBe(29); // 28 new + 1 existing
-    });
-
-    test('skips already-indexed conversations with create_time > since', async () => {
-      const existingIndex = new Map([
-        ['conv-known', makeConv('conv-known', 1700002000)],
-        ['conv-old', makeConv('conv-old', 1700001000)],
-      ]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        {
-          items: [
-            makeConv('conv-known', 1700002500), // already in index (create_time > since but known)
-            makeConv('conv-old', 1700001000),   // watermark
-          ],
-          total: 2, limit: 28, offset: 0,
-        },
-      ]);
-
-      const result = await fetchNewConversations('token', existingIndex, progress);
-
-      expect(result.size).toBe(2); // no new entries
-    });
-
-    test('does not call saveIndex when no new conversations found', async () => {
+  describe('fetchConversationListIncremental — re-scan when indexingComplete', () => {
+    test('always starts from offset 0 even when lastOffset is set', async () => {
       const existingIndex = new Map([['conv-1', makeConv('conv-1', 1700001000)]]);
-      const progress = makeProgress({ indexingComplete: true });
+      // Simulate a previously-completed run with lastOffset saved
+      const progress = makeProgress({ indexingComplete: true, lastOffset: 1232 });
 
+      // Only one page returned (partial) — if it started at offset 1232 it would be empty
       mockFetchPages([
         { items: [makeConv('conv-1', 1700001000)], total: 1, limit: 28, offset: 0 },
       ]);
 
-      const writeSpy = jest.spyOn(fs, 'writeFileSync');
-      await fetchNewConversations('token', existingIndex, progress);
+      const result = await fetchConversationListIncremental('token', existingIndex, progress);
 
-      const indexWrites = writeSpy.mock.calls.filter(([p]) => String(p).includes('conversation-index'));
-      expect(indexWrites).toHaveLength(0);
+      expect(result).toBe(existingIndex);
+      // Verify the URL used offset=0, not offset=1232
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('offset=0'),
+        expect.anything()
+      );
     });
 
-    test('calls saveIndex when new conversations are found', async () => {
+    test('stops after 3 pages with no new conversations', async () => {
+      // 3 full pages of already-indexed conversations, then the loop breaks
+      const convs = Array.from({ length: 28 }, (_, i) => makeConv(`conv-${i}`, 1700001000 + i));
+      const existingIndex = new Map(convs.map(c => [c.id, c]));
+      const progress = makeProgress({ indexingComplete: true });
+
+      mockFetchPages([
+        { items: convs, total: 84, limit: 28, offset: 0 },
+        { items: convs, total: 84, limit: 28, offset: 28 },
+        { items: convs, total: 84, limit: 28, offset: 56 },
+        { items: convs, total: 84, limit: 28, offset: 84 }, // should never be fetched
+      ]);
+
+      await fetchConversationListIncremental('token', existingIndex, progress);
+
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    test('finds new conversation and adds it to the index', async () => {
       const existingIndex = new Map([['conv-old', makeConv('conv-old', 1700001000)]]);
       const progress = makeProgress({ indexingComplete: true });
 
@@ -199,82 +109,10 @@ describe('api', () => {
         },
       ]);
 
-      const writeSpy = jest.spyOn(fs, 'writeFileSync');
-      await fetchNewConversations('token', existingIndex, progress);
+      const result = await fetchConversationListIncremental('token', existingIndex, progress);
 
-      const indexWrites = writeSpy.mock.calls.filter(([p]) => String(p).includes('conversation-index'));
-      expect(indexWrites.length).toBeGreaterThan(0);
-    });
-
-    test('handles ISO string create_time correctly as watermark', async () => {
-      const existingIndex = new Map([
-        ['conv-1', makeConv('conv-1', '2023-11-15T00:00:00.000Z')], // ISO string
-      ]);
-      const progress = makeProgress({ indexingComplete: true });
-      const since = new Date('2023-11-15T00:00:00.000Z').getTime() / 1000;
-
-      // conv-new has update_time just after since; conv-old is at since
-      mockFetchPages([
-        {
-          items: [
-            makeConv('conv-new', since + 1),
-            makeConv('conv-1', since),
-          ],
-          total: 2, limit: 28, offset: 0,
-        },
-      ]);
-
-      const result = await fetchNewConversations('token', existingIndex, progress);
-      expect(result.size).toBe(2);
       expect(result.has('conv-new')).toBe(true);
-    });
-
-    test('propagates auth errors', async () => {
-      const existingIndex = new Map([['conv-1', makeConv('conv-1', 1700001000)]]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      const authError = new Error('Unauthorized');
-      authError.authError = true;
-      global.fetch = jest.fn().mockRejectedValue(authError);
-
-      await expect(fetchNewConversations('token', existingIndex, progress))
-        .rejects.toMatchObject({ authError: true });
-    });
-  });
-
-  describe('fetchConversationListIncremental — delta dispatch', () => {
-    test('calls fetchNewConversations when indexingComplete is true', async () => {
-      const existingIndex = new Map([['conv-1', makeConv('conv-1', 1700001000)]]);
-      const progress = makeProgress({ indexingComplete: true });
-
-      mockFetchPages([
-        { items: [makeConv('conv-1', 1700001000)], total: 1, limit: 28, offset: 0 },
-      ]);
-
-      const result = await fetchConversationListIncremental('token', existingIndex, progress);
-
-      // Delta path: only 1 fetch (not the full scan loop)
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      const logs = console.log.mock.calls.map(c => c[0]).join('\n');
-      expect(logs).toContain('Checking for new conversations');
-      expect(result).toBe(existingIndex);
-    });
-
-    test('runs full scan when indexingComplete is false', async () => {
-      const existingIndex = new Map();
-      const progress = makeProgress({ indexingComplete: false });
-
-      mockFetchPages([
-        { items: [makeConv('conv-1', 1700001000)], total: 1, limit: 28, offset: 0 },
-        { items: [], total: 0, limit: 28, offset: 28 },
-      ]);
-
-      const result = await fetchConversationListIncremental('token', existingIndex, progress);
-
-      const logs = console.log.mock.calls.map(c => c[0]).join('\n');
-      expect(logs).toContain('Fetching conversation list');
-      expect(logs).not.toContain('Checking for new conversations');
-      expect(result.size).toBe(1);
+      expect(result.size).toBe(2);
     });
   });
 });
