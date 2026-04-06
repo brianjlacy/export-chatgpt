@@ -78,7 +78,7 @@ The script tracks progress automatically:
 ## Options
 
 ```
---bearer <token>        Bearer/access token (recommended; or set CHATGPT_BEARER_TOKEN env var)
+--bearer <token>        Bearer/access token (or set CHATGPT_BEARER_TOKEN env var; prompted if omitted)
 --token <token>         Session token (alternative auth, personal accounts only; or set CHATGPT_SESSION_TOKEN)
 --account-id <id>       ChatGPT Teams account ID (auto-detected from token when possible)
 -o, --output <dir>      Output directory (default: ./exports)
@@ -118,34 +118,37 @@ The only interactive prompt is the bearer token — if neither `--bearer`, `--to
 
 ```bash
 # Export everything (conversations, projects, images, canvas, attachments)
-npx export-chatgpt --bearer "eyJ..."
+npx export-chatgpt
 
 # Skip project conversations
-npx export-chatgpt --bearer "eyJ..." --no-projects
+npx export-chatgpt --no-projects
 
 # Only project conversations, skip file downloads
-npx export-chatgpt --bearer "eyJ..." --projects-only --no-files
+npx export-chatgpt --projects-only --no-files
 
-# Export only JSON format
-npx export-chatgpt --bearer "eyJ..." --format json
+# Export only JSON format (default is both json and markdown)
+npx export-chatgpt --format json
 
 # Export to custom directory
-npx export-chatgpt --bearer "eyJ..." --output ~/Documents/chatgpt-backup
+npx export-chatgpt --output ~/Documents/chatgpt-backup
 
 # Slower requests to avoid rate limiting
-npx export-chatgpt --bearer "eyJ..." --throttle 90
+npx export-chatgpt --throttle 90
 
 # Re-download all conversations (overwrite existing)
-npx export-chatgpt --bearer "eyJ..." --update
+npx export-chatgpt --update
 
 # Skip images but keep canvas and attachments
-npx export-chatgpt --bearer "eyJ..." --no-images
+npx export-chatgpt --no-images
 
 # Resume after token expiry — just run again with a fresh token
-npx export-chatgpt --bearer "fresh-eyJ..."
+npx export-chatgpt
 
-# Teams account
-npx export-chatgpt --bearer "eyJ..." --account-id "cc47585e-..."
+# Limit to 10 conversations this session
+npx export-chatgpt --max 10
+
+# Non-interactive mode (for scripts/CI — requires --bearer or ENV variable as below)
+CHATGPT_BEARER_TOKEN="eyJ..." npx export-chatgpt --non-interactive
 ```
 
 ## Markdown Output
@@ -193,7 +196,7 @@ This likely means one of:
 ### Rate limiting
 If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
-npx export-chatgpt --bearer "eyJ..." --throttle 90
+npx export-chatgpt --throttle 90
 ```
 
 ## How It Works
