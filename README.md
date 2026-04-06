@@ -25,12 +25,9 @@ Supports:
 2. Open DevTools (F12) → **Network** tab
 3. Refresh the page or click on a conversation
 4. Filter requests: `backend-api/conversations`
-5. Find the "Authorization" header in the
-5. Copy the `authorization: Bearer eyJ...` header value (just the `eyJ...` part)
+5. Click on a matching request, find the **Authorization** header under Request Headers, and copy the token (just the `eyJ...` part after `Bearer`)
 
-For **Teams accounts**, also copy the `chatgpt-account-id` header value from the same request.
-
-> **Warning:** Bearer tokens expire quickly — get a fresh one each time you run the export.
+> **Warning:** Bearer tokens can expire quickly — you may want to get a fresh one each time you run the export.
 
 ### 2. Run the Export
 
@@ -78,7 +75,7 @@ The script tracks progress automatically:
 --account-id <id>       ChatGPT Teams account ID (auto-detected from token when possible)
 -o, --output <dir>      Output directory (default: ./exports)
 --format <format>       Export format: json | markdown | both (default: both)
---delay <ms>            Delay between API requests in ms (default: 1500)
+--throttle <seconds>    Minimum time between API requests in seconds (default: 60)
 --update                Re-download and overwrite existing conversations
 --no-projects           Skip project conversations (projects are exported by default)
 --projects-only         Export only project conversations (skip regular)
@@ -86,6 +83,13 @@ The script tracks progress automatically:
 --no-images             Skip downloading DALL-E images
 --no-canvas             Skip downloading canvas documents
 --no-attachments        Skip downloading other file attachments
+--no-user-dir           Do not nest exports inside a user ID subdirectory
+--max <n>               Only download the next N conversations this session (also -N, e.g. -7)
+--conv <ids>            Only download specific conversation ID(s), comma-separated
+--proj <ids>            Only download specific project ID(s), comma-separated
+-n, --non-interactive   Run without any interactive prompts (requires --bearer or --token)
+--no-summary            Suppress the export summary at the end
+--no-donate             Suppress the donation message/prompt
 --verbose               Show detailed request/response info
 --help                  Show help message
 ```
@@ -122,7 +126,7 @@ node export-chatgpt.js --bearer "eyJ..." --format json
 node export-chatgpt.js --bearer "eyJ..." --output ~/Documents/chatgpt-backup
 
 # Slower requests to avoid rate limiting
-node export-chatgpt.js --bearer "eyJ..." --delay 3000
+node export-chatgpt.js --bearer "eyJ..." --throttle 90
 
 # Re-download all conversations (overwrite existing)
 node export-chatgpt.js --bearer "eyJ..." --update
@@ -180,9 +184,9 @@ This likely means one of:
 - The account genuinely has no conversations
 
 ### Rate limiting
-If you see 429 errors, the script will automatically wait and retry. You can also increase the delay:
+If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
-node export-chatgpt.js --bearer "eyJ..." --delay 3000
+node export-chatgpt.js --bearer "eyJ..." --throttle 90
 ```
 
 ## How It Works
