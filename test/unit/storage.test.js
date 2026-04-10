@@ -84,6 +84,7 @@ describe('storage', () => {
         projectsLastCursor: null,
         projects: {},
         downloadedFileIds: [],
+        failedFileIds: {},
       });
     });
 
@@ -96,6 +97,7 @@ describe('storage', () => {
         projectsLastCursor: 'cursor123',
         projects: { proj1: { downloadedIds: ['c1'] } },
         downloadedFileIds: ['f1'],
+        failedFileIds: { 'f2': 'file_not_found' },
       };
       saveProgress(data);
       const loaded = loadProgress();
@@ -112,6 +114,7 @@ describe('storage', () => {
       const loaded = loadProgress();
       expect(loaded.projects).toEqual({});
       expect(loaded.downloadedFileIds).toEqual([]);
+      expect(loaded.failedFileIds).toEqual({});
       expect(loaded.projectsIndexingComplete).toBe(false);
       expect(loaded.projectsLastCursor).toBeNull();
     });
