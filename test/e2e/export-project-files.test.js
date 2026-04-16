@@ -376,4 +376,61 @@ describe('project-level file downloads (e2e)', () => {
     expect(activeFileCalls.length).toBe(1);
     expect(templateFileCalls.length).toBe(1);
   });
+
+  test('project file download URL uses gizmo_id parameter (not inline=false)', async () => {
+    const projectData = mockProjectListResponse([{
+      id: 'g-p-abc123',
+      name: 'Gizmo Test Project',
+      files: [
+        { id: 'file-gz-1', file_id: 'file-gz-1', name: 'report.pdf', type: 'application/pdf', size: 1024 },
+      ],
+    }]);
+
+    global.fetch = jest.fn().mockImplementation((url) => {
+      if (url.includes('/gizmos/snorlax/sidebar')) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve(projectData),
+        });
+      }
+      if (url.includes('/gizmos/g-p-abc123/conversations')) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve({ items: [], cursor: null }),
+        });
+      }
+      if (url.includes('/files/download/file-gz-1')) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: () => Promise.resolve(mockFileDownloadResponse('file-gz-1', 'report.pdf')),
+        });
+      }
+      if (url.includes('files.example.com/file-gz-1')) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          headers: { get: () => 'application/pdf' },
+          arrayBuffer: () => Promise.resolve(Buffer.from('pdf-bytes')),
+        });
+      }
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ items: [] }),
+      });
+    });
+
+    const { run } = require('../../lib/exporter');
+    await run('fake-token');
+
+    // Find the metadata fetch call for the project file
+    const fileMetaCalls = global.fetch.mock.calls.filter(
+      ([u]) => u.includes('/files/download/file-gz-1')
+    );
+    expect(fileMetaCalls.length).toBe(1);
+
+    const [metaUrl] = fileMetaCalls[0];
+    // Must include gizmo_id with the correct project ID
+    expect(metaUrl).toContain('gizmo_id=g-p-abc123');
+    // Must NOT use the old inline=false parameter
+    expect(metaUrl).not.toContain('inline=false');
+  });
 });
