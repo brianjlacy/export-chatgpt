@@ -154,6 +154,99 @@ describe('downloader failure cases', () => {
       expect(count).toBe(0);
     });
 
+    test('records file_not_found errors in failedFileIds', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://deleted-file', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ status: 'error', error_code: 'file_not_found' }),
+      });
+
+      const progress = loadProgress();
+      const count = await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(count).toBe(0);
+      expect(progress.failedFileIds['deleted-file']).toBe('file_not_found');
+    });
+
+    test('does not record non-permanent errors in failedFileIds', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://temp-fail', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ status: 'error', error_code: 'server_error' }),
+      });
+
+      const progress = loadProgress();
+      await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(progress.failedFileIds['temp-fail']).toBeUndefined();
+    });
+
+    test('skips files already in failedFileIds without making API calls', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://known-dead', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn();
+      const progress = {
+        downloadedFileIds: [],
+        failedFileIds: { 'known-dead': 'file_not_found' },
+      };
+      const count = await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(count).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     test('respects CONFIG.downloadImages filter', async () => {
       CONFIG.downloadImages = false;
       const { downloadConversationFiles } = require('../../lib/downloader');
