@@ -7,14 +7,14 @@ jest.mock('../../lib/config', () => {
 });
 
 describe('auth failure cases', () => {
-  let CONFIG, fetchWithRetry, getAccessToken;
+  let CONFIG, fetchWithRetry, getAccessToken, verifyToken;
 
   beforeEach(() => {
     jest.resetModules();
     jest.spyOn(console, 'log').mockImplementation();
     ({ CONFIG } = require('../../lib/config'));
     CONFIG.verbose = false;
-    ({ fetchWithRetry, getAccessToken } = require('../../lib/auth'));
+    ({ fetchWithRetry, getAccessToken, verifyToken } = require('../../lib/auth'));
   });
 
   afterEach(() => {
@@ -103,6 +103,36 @@ describe('auth failure cases', () => {
         .mockResolvedValueOnce({ ok: true, status: 200 });
       const response = await fetchWithRetry('https://example.com', {}, 2);
       expect(response.ok).toBe(true);
+    });
+  });
+
+  describe('verifyToken', () => {
+    test('returns true when conversations endpoint returns 200', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+      const result = await verifyToken('valid-token');
+      expect(result).toBe(true);
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/conversations?limit=1'),
+        expect.objectContaining({ headers: expect.any(Object) }),
+      );
+    });
+
+    test('returns false when conversations endpoint returns 401', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 });
+      const result = await verifyToken('expired-token');
+      expect(result).toBe(false);
+    });
+
+    test('returns false when conversations endpoint returns 403', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 403 });
+      const result = await verifyToken('revoked-token');
+      expect(result).toBe(false);
+    });
+
+    test('returns false on network error', async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+      const result = await verifyToken('any-token');
+      expect(result).toBe(false);
     });
   });
 
