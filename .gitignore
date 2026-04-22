@@ -123,3 +123,4 @@ out/
 .docusaurus
 
 .svelte-kit
+*.local.json

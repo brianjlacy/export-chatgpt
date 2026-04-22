@@ -154,6 +154,99 @@ describe('downloader failure cases', () => {
       expect(count).toBe(0);
     });
 
+    test('records file_not_found errors in failedFileIds', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://deleted-file', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ status: 'error', error_code: 'file_not_found' }),
+      });
+
+      const progress = loadProgress();
+      const count = await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(count).toBe(0);
+      expect(progress.failedFileIds['deleted-file']).toBe('file_not_found');
+    });
+
+    test('does not record non-permanent errors in failedFileIds', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://temp-fail', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ status: 'error', error_code: 'server_error' }),
+      });
+
+      const progress = loadProgress();
+      await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(progress.failedFileIds['temp-fail']).toBeUndefined();
+    });
+
+    test('skips files already in failedFileIds without making API calls', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://known-dead', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn();
+      const progress = {
+        downloadedFileIds: [],
+        failedFileIds: { 'known-dead': 'file_not_found' },
+      };
+      const count = await downloadConversationFiles('token', conversationData, tmpDir, progress);
+
+      expect(count).toBe(0);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     test('respects CONFIG.downloadImages filter', async () => {
       CONFIG.downloadImages = false;
       const { downloadConversationFiles } = require('../../lib/downloader');
@@ -181,7 +274,7 @@ describe('downloader failure cases', () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    test('propagates auth errors from file download URL fetch', async () => {
+    test('propagates auth errors when token is truly expired (401 + verifyToken fails)', async () => {
       const { downloadConversationFiles } = require('../../lib/downloader');
       const { loadProgress } = require('../../lib/storage');
 
@@ -201,8 +294,104 @@ describe('downloader failure cases', () => {
         },
       };
 
+      // All fetch calls return 401 — both fetchWithRetry and verifyToken
       global.fetch = jest.fn().mockResolvedValue({
         ok: false, status: 401, statusText: 'Unauthorized',
+      });
+
+      const progress = loadProgress();
+      await expect(downloadConversationFiles('expired-token', conversationData, tmpDir, progress))
+        .rejects.toMatchObject({ authError: true });
+      // fetch called twice: once by fetchWithRetry (401), once by verifyToken (also 401 → not ok)
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('on 403 with valid token, skips file and marks access_denied', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://forbidden-file', metadata: {} },
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://good-file', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockImplementation((url) => {
+        // First file: fetchWithRetry gets 403
+        if (url.includes('forbidden-file') && url.includes('/files/download/')) {
+          return Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' });
+        }
+        // verifyToken: token is still valid
+        if (url.includes('/conversations?limit=1')) {
+          return Promise.resolve({ ok: true, status: 200 });
+        }
+        // Second file: succeeds
+        if (url.includes('good-file') && url.includes('/files/download/')) {
+          return Promise.resolve({
+            ok: true, status: 200,
+            json: () => Promise.resolve({ status: 'success', download_url: 'https://cdn.example.com/good.png', file_name: 'good.png' }),
+          });
+        }
+        if (url === 'https://cdn.example.com/good.png') {
+          return Promise.resolve({
+            ok: true, status: 200,
+            headers: { get: () => 'image/png' },
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+      });
+
+      const progress = loadProgress();
+      const filesDir = path.join(tmpDir, 'files');
+      const count = await downloadConversationFiles('valid-token', conversationData, filesDir, progress);
+
+      expect(count).toBe(1);
+      expect(progress.downloadedFileIds).toContain('good-file');
+      expect(progress.downloadedFileIds).not.toContain('forbidden-file');
+      expect(progress.failedFileIds['forbidden-file']).toBe('access_denied');
+    });
+
+    test('on 403 with expired token, throws authError', async () => {
+      const { downloadConversationFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const conversationData = {
+        id: 'conv-1',
+        mapping: {
+          node1: {
+            message: {
+              content: {
+                content_type: 'multimodal_text',
+                parts: [
+                  { content_type: 'image_asset_pointer', asset_pointer: 'file-service://forbidden-file', metadata: {} },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url.includes('/files/download/')) {
+          return Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' });
+        }
+        // verifyToken: token is also expired
+        if (url.includes('/conversations?limit=1')) {
+          return Promise.resolve({ ok: false, status: 401 });
+        }
+        return Promise.resolve({ ok: true, status: 200 });
       });
 
       const progress = loadProgress();
@@ -227,6 +416,60 @@ describe('downloader failure cases', () => {
 
       const count = await downloadConversationFiles('token', conversationData, tmpDir, loadProgress());
       expect(count).toBe(0);
+    });
+  });
+
+  describe('downloadProjectFiles - auth verification', () => {
+    test('on 403 with valid token, skips file and marks access_denied', async () => {
+      const { downloadProjectFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const project = {
+        id: 'proj-1',
+        name: 'Test Project',
+        files: [{ file_id: 'proj-file-forbidden', name: 'secret.pdf' }],
+      };
+
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url.includes('/files/download/')) {
+          return Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' });
+        }
+        if (url.includes('/conversations?limit=1')) {
+          return Promise.resolve({ ok: true, status: 200 });
+        }
+        return Promise.resolve({ ok: true, status: 200 });
+      });
+
+      const progress = loadProgress();
+      const count = await downloadProjectFiles('valid-token', project, progress);
+
+      expect(count).toBe(0);
+      expect(progress.failedFileIds['proj-file-forbidden']).toBe('access_denied');
+    });
+
+    test('on 403 with expired token, throws authError', async () => {
+      const { downloadProjectFiles } = require('../../lib/downloader');
+      const { loadProgress } = require('../../lib/storage');
+
+      const project = {
+        id: 'proj-1',
+        name: 'Test Project',
+        files: [{ file_id: 'proj-file-1', name: 'doc.pdf' }],
+      };
+
+      global.fetch = jest.fn().mockImplementation((url) => {
+        if (url.includes('/files/download/')) {
+          return Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' });
+        }
+        if (url.includes('/conversations?limit=1')) {
+          return Promise.resolve({ ok: false, status: 401 });
+        }
+        return Promise.resolve({ ok: true, status: 200 });
+      });
+
+      const progress = loadProgress();
+      await expect(downloadProjectFiles('expired-token', project, progress))
+        .rejects.toMatchObject({ authError: true });
     });
   });
 
