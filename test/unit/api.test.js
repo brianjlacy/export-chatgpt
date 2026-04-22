@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 describe('api', () => {
-  let CONFIG, PATHS, initPaths, fetchConversationListIncremental;
+  let CONFIG, PATHS, initPaths, fetchConversationListIncremental, fetchProjectList, fetchProjectConversations;
   let tmpDir;
 
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('api', () => {
     CONFIG.conversationsPerPage = 28;
     initPaths();
 
-    ({ fetchConversationListIncremental } = require('../../lib/api'));
+    ({ fetchConversationListIncremental, fetchProjectList, fetchProjectConversations } = require('../../lib/api'));
   });
 
   afterEach(() => {
@@ -58,6 +58,83 @@ describe('api', () => {
       });
     });
   }
+
+  describe('fetchProjectList — conversation_count initialization (issue #9)', () => {
+    function makeSidebarResponse(gizmos, cursor = null) {
+      return {
+        items: gizmos.map(g => ({
+          gizmo: { gizmo: g, files: g.files || [] },
+        })),
+        cursor,
+      };
+    }
+
+    function makeGizmo(id, name = 'Test Project') {
+      return {
+        id,
+        display: { name, description: '' },
+        instructions: '',
+        workspace_id: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-02',
+        num_interactions: 5,
+      };
+    }
+
+    test('initializes conversation_count as null, not 0', async () => {
+      mockFetchPages([makeSidebarResponse([makeGizmo('proj-1')])]);
+
+      const progress = makeProgress();
+      const projects = await fetchProjectList('token', progress);
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0].conversation_count).toBeNull();
+    });
+
+    test('conversation_count is null in saved project-index.json', async () => {
+      mockFetchPages([makeSidebarResponse([
+        makeGizmo('proj-1', 'Alpha'),
+        makeGizmo('proj-2', 'Beta'),
+      ])]);
+
+      const progress = makeProgress();
+      await fetchProjectList('token', progress);
+
+      const saved = JSON.parse(fs.readFileSync(PATHS.projectIndexFile, 'utf8'));
+      expect(saved).toHaveLength(2);
+      for (const p of saved) {
+        expect(p.conversation_count).toBeNull();
+      }
+    });
+
+    test('conversation_count updates to real count after fetchProjectConversations', async () => {
+      // Call 1: fetchProjectList sidebar response
+      // Call 2: fetchProjectConversations returns 3 conversations
+      mockFetchPages([
+        makeSidebarResponse([makeGizmo('proj-1')]),
+        {
+          items: [
+            { id: 'c1', title: 'Chat 1' },
+            { id: 'c2', title: 'Chat 2' },
+            { id: 'c3', title: 'Chat 3' },
+          ],
+          cursor: null,
+        },
+      ]);
+
+      const progress = makeProgress();
+      const projects = await fetchProjectList('token', progress);
+      expect(projects[0].conversation_count).toBeNull();
+
+      await fetchProjectConversations('token', projects[0], progress);
+
+      expect(projects[0].conversation_count).toBe(3);
+
+      // Verify the persisted index also updated
+      const saved = JSON.parse(fs.readFileSync(PATHS.projectIndexFile, 'utf8'));
+      expect(saved[0].conversation_count).toBe(3);
+    });
+  });
 
   describe('fetchConversationListIncremental — re-scan when indexingComplete', () => {
     test('always starts from offset 0 even when lastOffset is set', async () => {

@@ -126,6 +126,25 @@ describe('exporter', () => {
       expect(logSpy).not.toHaveBeenCalled();
     });
 
+    test('shows permanently failed count when present', () => {
+      const s = makeSummary({ regular: { fileCount: 10 } });
+      s.failedFiles = 5;
+      printSummary(s);
+      const output = logSpy.mock.calls.map(c => c[0]).join('\n');
+      expect(output).toContain('5 permanently failed');
+      expect(output).toContain('Files:');
+    });
+
+    test('shows Files line when only failed files exist', () => {
+      const s = makeSummary();
+      s.failedFiles = 3;
+      printSummary(s);
+      const output = logSpy.mock.calls.map(c => c[0]).join('\n');
+      expect(output).toContain('Files:');
+      expect(output).toContain('0 downloaded');
+      expect(output).toContain('3 permanently failed');
+    });
+
     test('shows projects line when projectsOnly is true', () => {
       CONFIG.includeProjects = false;
       CONFIG.projectsOnly = true;
