@@ -218,6 +218,88 @@ describe('auth', () => {
     });
   });
 
+  describe('adaptive throttle', () => {
+    let noteRateLimit, noteSuccess;
+
+    beforeEach(() => {
+      jest.resetModules();
+      jest.spyOn(console, 'log').mockImplementation();
+      ({ CONFIG } = require('../../lib/config'));
+      CONFIG.adaptiveThrottle = true;
+      CONFIG.throttleMs = 10000;
+      CONFIG.minThrottleMs = 5000;
+      CONFIG.maxThrottleMs = 20000;
+      CONFIG.verbose = false;
+      ({ noteRateLimit, noteSuccess } = require('../../lib/auth'));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('noteRateLimit bumps throttleMs by 2s on rate-limit hit', () => {
+      noteRateLimit();
+      expect(CONFIG.throttleMs).toBe(12000);
+    });
+
+    test('noteRateLimit clamps at maxThrottleMs', () => {
+      CONFIG.throttleMs = 19500;
+      noteRateLimit();
+      expect(CONFIG.throttleMs).toBe(20000);
+    });
+
+    test('noteRateLimit does not exceed maxThrottleMs when already at ceiling', () => {
+      CONFIG.throttleMs = 20000;
+      noteRateLimit();
+      expect(CONFIG.throttleMs).toBe(20000);
+    });
+
+    test('noteRateLimit is a no-op when adaptiveThrottle is false', () => {
+      CONFIG.adaptiveThrottle = false;
+      noteRateLimit();
+      expect(CONFIG.throttleMs).toBe(10000);
+    });
+
+    test('noteRateLimit resets consecutiveSuccesses counter', () => {
+      // Trigger 19 successes (not enough to decrement yet)
+      for (let i = 0; i < 19; i++) noteSuccess();
+      // Rate limit resets the streak
+      noteRateLimit();
+      // Now trigger 19 more successes — still not enough (streak was reset)
+      for (let i = 0; i < 19; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(12000); // only the noteRateLimit bump
+    });
+
+    test('noteSuccess decrements throttleMs after 20 consecutive successes', () => {
+      for (let i = 0; i < 20; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(9000);
+    });
+
+    test('noteSuccess does not decrement before 20 successes', () => {
+      for (let i = 0; i < 19; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(10000);
+    });
+
+    test('noteSuccess clamps at minThrottleMs', () => {
+      CONFIG.throttleMs = 5500;
+      for (let i = 0; i < 20; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(5000);
+    });
+
+    test('noteSuccess does not go below minThrottleMs when already at floor', () => {
+      CONFIG.throttleMs = 5000;
+      for (let i = 0; i < 20; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(5000);
+    });
+
+    test('noteSuccess is a no-op when adaptiveThrottle is false', () => {
+      CONFIG.adaptiveThrottle = false;
+      for (let i = 0; i < 20; i++) noteSuccess();
+      expect(CONFIG.throttleMs).toBe(10000);
+    });
+
+  });
+
   describe('throttle', () => {
     let throttle;
 

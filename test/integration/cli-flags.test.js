@@ -79,6 +79,21 @@ describe('CLI flag parsing', () => {
     expect(stdout).not.toContain('Enter Bearer token');
   });
 
+  test('--help shows --no-adaptive-throttle flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--no-adaptive-throttle');
+  });
+
+  test('--help shows --min-throttle flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--min-throttle');
+  });
+
+  test('--help shows --max-throttle flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--max-throttle');
+  });
+
   test('--throttle validates numeric input', () => {
     const { stdout } = run(['--bearer', 'fake', '--throttle', 'notanumber', '--non-interactive']);
     expect(stdout).toContain('Invalid --throttle');
