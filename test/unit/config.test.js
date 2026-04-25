@@ -13,7 +13,7 @@ describe('config', () => {
       expect(CONFIG.baseUrl).toBe('https://chatgpt.com');
       expect(CONFIG.apiBase).toBe('https://chatgpt.com/backend-api');
       expect(CONFIG.outputDir).toBe('./exports');
-      expect(CONFIG.throttleMs).toBe(60000);
+      expect(CONFIG.throttleMs).toBeNull();
       expect(CONFIG.conversationsPerPage).toBe(28);
       expect(CONFIG.exportFormat).toBe('both');
       expect(CONFIG.accountId).toBeNull();

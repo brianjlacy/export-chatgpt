@@ -159,4 +159,14 @@ describe('CLI config propagation', () => {
     const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--proj', 'proj-111']);
     expect(stdout).toContain('Project filter');
   });
+
+  test('--reset-pacing shows reset banner in output', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--reset-pacing']);
+    expect(stdout).toContain('Pacing reset: ignoring previous run snapshot');
+  });
+
+  test('--help shows --reset-pacing flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--reset-pacing');
+  });
 });

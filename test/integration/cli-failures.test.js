@@ -37,7 +37,7 @@ describe('CLI failure cases', () => {
   test('invalid --throttle shows warning but continues', () => {
     const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--throttle', 'abc']);
     expect(stdout).toContain('Invalid --throttle');
-    expect(stdout).toContain('60s');
+    expect(stdout).toContain('adaptive');
   });
 
   test('negative --throttle shows warning', () => {
