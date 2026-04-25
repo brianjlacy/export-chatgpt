@@ -71,11 +71,13 @@ A Node.js CLI tool that bulk-exports all ChatGPT conversations via the ChatGPT b
 | `--account-id <id>` | string | — | Teams account ID (auto-detected from JWT when not provided) |
 | `-o, --output <dir>` | string | `./exports` | Output directory |
 | `--format <fmt>` | string | `both` | `json`, `markdown`, or `both` |
-| `--delay <ms>` | number | `1500` | Delay between API requests in ms |
+| `--throttle <sec>` | number | — | Minimum floor for adaptive pacing (0 disables pacing) |
+| `--reset-pacing` | flag | `false` | Ignore previous pacing snapshot and start at baseline |
+| `--browser-fetch` | flag | `false` | Use Playwright/Chromium to bypass Cloudflare |
 | `--update` | boolean flag | `false` | Re-download and overwrite existing conversations |
-| `--no-projects` | boolean flag | — | Skip project conversations (projects are exported by default) |
-| `--projects-only` | boolean flag | `false` | Export only project conversations (skip regular) |
-| `--no-files` | boolean flag | — | Skip ALL file downloads (overrides granular flags below) |
+| `--no-projects` | boolean flag | — | Skip project conversations |
+| `--projects-only` | boolean flag | `false` | Export only project conversations |
+| `--no-files` | boolean flag | — | Skip ALL file downloads |
 | `--no-images` | boolean flag | — | Skip downloading DALL-E images |
 | `--no-canvas` | boolean flag | — | Skip downloading canvas documents |
 | `--no-attachments` | boolean flag | — | Skip downloading other file attachments |
@@ -84,11 +86,9 @@ A Node.js CLI tool that bulk-exports all ChatGPT conversations via the ChatGPT b
 
 ### 4.2 Flag Interactions
 
+- **Pacing:** Adaptive pacing is enabled by default (Payload 2s / Indexing 5s baselines). `--throttle` acts as a floor for the adaptive interval. `--throttle 0` disables pacing.
+- **Cloudflare Bypass:** `--browser-fetch` requires Playwright and Chromium. It solves the challenge once and then proxies all requests.
 - **Projects:** Exported by default. Use `--no-projects` to skip, or `--projects-only` to export only projects.
-- `--projects-only` implies project export and skips the regular conversation export.
-- **Files:** All file types downloaded by default. `--no-files` overrides all granular flags (`--no-images`, `--no-canvas`, `--no-attachments`).
-- `--delay` must be a non-negative integer; invalid values fall back to the default of 1500ms with a warning.
-- `--account-id` is auto-detected from the JWT payload when not provided explicitly.
 
 ### 4.3 Interactive Prompts
 
@@ -499,47 +499,34 @@ This is optional and can be captured as supplementary metadata alongside the con
 
 ## 12. Progress Tracking
 
-### 12.1 Current Schema
-
-```json
-{
-  "indexingComplete": false,
-  "lastOffset": 0,
-  "downloadedIds": []
-}
-```
-
-### 12.2 Extended Schema (with Projects & Files)
+### 12.1 Schema
 
 ```json
 {
   "indexingComplete": false,
   "lastOffset": 0,
   "downloadedIds": [],
-
   "projectsIndexingComplete": false,
   "projectsLastCursor": null,
-  "projects": {
-    "g-p-{hex}": {
-      "name": "Project Name",
-      "indexingComplete": false,
-      "lastCursor": null,
-      "downloadedIds": []
-    }
-  },
-
-  "downloadedFileIds": []
+  "projects": { ... },
+  "downloadedFileIds": [],
+  "pacing": {
+    "currentInterval": 2000,
+    "consecutive429s": 0,
+    "lastUpdated": 1714060000000
+  }
 }
 ```
 
-### 12.3 Resumption Logic
+### 12.2 Resumption Logic
 
 1. If `indexingComplete: false` → resume regular conversation indexing from `lastOffset`
 2. If `projectsIndexingComplete: false` → resume project listing from `projectsLastCursor`
 3. For each project: if `indexingComplete: false` → resume from project's `lastCursor`
-4. Skip conversations in `downloadedIds` (unless `--update`)
-5. Skip files in `downloadedFileIds`
-6. On auth error → save all progress, exit with message to refresh token
+4. **Pacing Restore:** Restore `currentInterval` and `consecutive429s`. Apply linear time-decay if the snapshot is > 60s old; full reset if > 10 min old.
+5. Skip conversations in `downloadedIds` (unless `--update`)
+6. Skip files in `downloadedFileIds`
+7. On auth error or Cloudflare challenge → save all progress, exit with message to refresh token or wait.
 
 ---
 
@@ -547,17 +534,18 @@ This is optional and can be captured as supplementary metadata alongside the con
 
 ### 13.1 Authentication Errors (401/403)
 
-- Set `error.authError = true`
-- Save all progress to disk
-- Log clear message about token expiration
-- Exit with code 1
-- User re-runs with fresh token to resume
+- Inspect `cf-mitigated: challenge` header on 403s.
+- If present: Set `error.cloudflareError = true` (IP reputation block).
+- Else: Set `error.authError = true` (Token expired).
+- Save all progress to disk.
+- Log clear message for user (Token refresh vs. IP wait/change).
+- Exit with code 1.
 
 ### 13.2 Rate Limiting (429)
 
-- Exponential backoff: `(attempt + 1) * 5000ms`
-- Maximum 3 retries per request
-- Global configurable delay via `--delay` flag
+- Adaptive pacing: Increase interval (e.g., 1.5x or use `Retry-After`).
+- Success streak: Decrease interval back toward baseline.
+- Global configurable floor via `--throttle` flag.
 
 ### 13.3 Network Errors
 
