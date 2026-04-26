@@ -139,6 +139,31 @@ describe('auth', () => {
       global.fetch.mockRestore();
     });
 
+    test('flags cloudflareError on 403 with cf-mitigated: challenge header', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        headers: { get: (name) => (name === 'cf-mitigated' ? 'challenge' : null) },
+      });
+      await expect(fetchWithRetry('https://example.com', {}, 1))
+        .rejects.toMatchObject({ authError: true, cloudflareError: true });
+      global.fetch.mockRestore();
+    });
+
+    test('does not flag cloudflareError on 403 without cf-mitigated header', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        headers: { get: () => null },
+      });
+      const err = await fetchWithRetry('https://example.com', {}, 1).catch(e => e);
+      expect(err.authError).toBe(true);
+      expect(err.cloudflareError).toBeUndefined();
+      global.fetch.mockRestore();
+    });
+
     test('retries on non-OK responses', async () => {
       global.fetch = jest.fn()
         .mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Server Error' })
@@ -218,86 +243,218 @@ describe('auth', () => {
     });
   });
 
-  describe('adaptive throttle', () => {
-    let noteRateLimit, noteSuccess;
+  describe('extractExpiryFromJWT', () => {
+    let extractExpiryFromJWT;
+
+    beforeEach(() => {
+      jest.resetModules();
+      ({ extractExpiryFromJWT } = require('../../lib/auth'));
+    });
+
+    function makeJWT(payload) {
+      const header = Buffer.from(JSON.stringify({ alg: 'RS256' })).toString('base64url');
+      const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      return `${header}.${body}.signature`;
+    }
+
+    test('returns exp claim converted from seconds to ms', () => {
+      const token = makeJWT({ exp: 1777509211 });
+      expect(extractExpiryFromJWT(token)).toBe(1777509211 * 1000);
+    });
+
+    test('returns null when exp claim is missing', () => {
+      const token = makeJWT({ sub: 'user123' });
+      expect(extractExpiryFromJWT(token)).toBeNull();
+    });
+
+    test('returns null when exp is not a number', () => {
+      const token = makeJWT({ exp: 'soon' });
+      expect(extractExpiryFromJWT(token)).toBeNull();
+    });
+
+    test('returns null for malformed token', () => {
+      expect(extractExpiryFromJWT('not-a-jwt')).toBeNull();
+      expect(extractExpiryFromJWT('')).toBeNull();
+    });
+  });
+
+  describe('pacing persistence', () => {
+    let getPacingSnapshot, restorePacingSnapshot, getPacingStats;
 
     beforeEach(() => {
       jest.resetModules();
       jest.spyOn(console, 'log').mockImplementation();
-      ({ CONFIG } = require('../../lib/config'));
-      CONFIG.adaptiveThrottle = true;
-      CONFIG.throttleMs = 10000;
-      CONFIG.minThrottleMs = 5000;
-      CONFIG.maxThrottleMs = 20000;
-      CONFIG.verbose = false;
-      ({ noteRateLimit, noteSuccess } = require('../../lib/auth'));
+      ({ getPacingSnapshot, restorePacingSnapshot, getPacingStats } = require('../../lib/auth'));
     });
 
     afterEach(() => {
       jest.restoreAllMocks();
     });
 
-    test('noteRateLimit bumps throttleMs by 2s on rate-limit hit', () => {
-      noteRateLimit();
-      expect(CONFIG.throttleMs).toBe(12000);
+    test('snapshot contains currentInterval, consecutive429s, lastUpdated', () => {
+      const snap = getPacingSnapshot();
+      expect(snap).toHaveProperty('currentInterval');
+      expect(snap).toHaveProperty('consecutive429s');
+      expect(snap).toHaveProperty('lastUpdated');
+      expect(typeof snap.currentInterval).toBe('number');
+      expect(typeof snap.consecutive429s).toBe('number');
+      expect(typeof snap.lastUpdated).toBe('number');
     });
 
-    test('noteRateLimit clamps at maxThrottleMs', () => {
-      CONFIG.throttleMs = 19500;
-      noteRateLimit();
-      expect(CONFIG.throttleMs).toBe(20000);
+    test('restore rejects null/undefined input', () => {
+      expect(restorePacingSnapshot(null)).toBe(false);
+      expect(restorePacingSnapshot(undefined)).toBe(false);
     });
 
-    test('noteRateLimit does not exceed maxThrottleMs when already at ceiling', () => {
-      CONFIG.throttleMs = 20000;
-      noteRateLimit();
-      expect(CONFIG.throttleMs).toBe(20000);
+    test('restore rejects non-object input', () => {
+      expect(restorePacingSnapshot('string')).toBe(false);
+      expect(restorePacingSnapshot(42)).toBe(false);
     });
 
-    test('noteRateLimit is a no-op when adaptiveThrottle is false', () => {
-      CONFIG.adaptiveThrottle = false;
-      noteRateLimit();
-      expect(CONFIG.throttleMs).toBe(10000);
+    test('restore rejects stale snapshot (>10min old)', () => {
+      const snap = {
+        currentInterval: 30000,
+        consecutive429s: 2,
+        lastUpdated: Date.now() - (11 * 60 * 1000),
+      };
+      expect(restorePacingSnapshot(snap)).toBe(false);
+      // State should not have been mutated to stale values
+      expect(getPacingSnapshot().currentInterval).not.toBe(30000);
     });
 
-    test('noteRateLimit resets consecutiveSuccesses counter', () => {
-      // Trigger 19 successes (not enough to decrement yet)
-      for (let i = 0; i < 19; i++) noteSuccess();
-      // Rate limit resets the streak
-      noteRateLimit();
-      // Now trigger 19 more successes — still not enough (streak was reset)
-      for (let i = 0; i < 19; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(12000); // only the noteRateLimit bump
+    test('restore applies fresh snapshot', () => {
+      const snap = {
+        currentInterval: 25000,
+        consecutive429s: 3,
+        lastUpdated: Date.now() - 5000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      const restored = getPacingSnapshot();
+      expect(restored.currentInterval).toBe(25000);
+      expect(restored.consecutive429s).toBe(3);
     });
 
-    test('noteSuccess decrements throttleMs after 20 consecutive successes', () => {
-      for (let i = 0; i < 20; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(9000);
+    test('restore caps currentInterval at PACING_MAX_INTERVAL_MS (120s)', () => {
+      const snap = {
+        currentInterval: 300000, // 5 min — above cap
+        consecutive429s: 5,
+        lastUpdated: Date.now(),
+      };
+      restorePacingSnapshot(snap);
+      expect(getPacingSnapshot().currentInterval).toBe(120000);
     });
 
-    test('noteSuccess does not decrement before 20 successes', () => {
-      for (let i = 0; i < 19; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(10000);
+    test('restore ignores currentInterval below baselineFloor', () => {
+      // baselineFloor is 2000. Values below that (stale/junk) should be rejected.
+      const snap = {
+        currentInterval: 500,
+        consecutive429s: 0,
+        lastUpdated: Date.now(),
+      };
+      restorePacingSnapshot(snap);
+      // Unchanged from default baseline (2000), not lowered to 500
+      expect(getPacingSnapshot().currentInterval).toBeGreaterThanOrEqual(2000);
     });
 
-    test('noteSuccess clamps at minThrottleMs', () => {
-      CONFIG.throttleMs = 5500;
-      for (let i = 0; i < 20; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(5000);
+    test('restore ignores negative consecutive429s', () => {
+      const snap = {
+        currentInterval: 15000,
+        consecutive429s: -1,
+        lastUpdated: Date.now(),
+      };
+      restorePacingSnapshot(snap);
+      expect(getPacingSnapshot().consecutive429s).toBeGreaterThanOrEqual(0);
     });
 
-    test('noteSuccess does not go below minThrottleMs when already at floor', () => {
-      CONFIG.throttleMs = 5000;
-      for (let i = 0; i < 20; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(5000);
+    test('getPacingStats exposes peakInterval', () => {
+      const stats = getPacingStats();
+      expect(stats).toHaveProperty('peakInterval');
+      expect(typeof stats.peakInterval).toBe('number');
+      expect(stats.peakInterval).toBeGreaterThanOrEqual(stats.currentInterval);
     });
 
-    test('noteSuccess is a no-op when adaptiveThrottle is false', () => {
-      CONFIG.adaptiveThrottle = false;
-      for (let i = 0; i < 20; i++) noteSuccess();
-      expect(CONFIG.throttleMs).toBe(10000);
+    test('restore updates peakInterval to max of current/restored', () => {
+      const snap = {
+        currentInterval: 40000,
+        consecutive429s: 1,
+        lastUpdated: Date.now(),
+      };
+      restorePacingSnapshot(snap);
+      expect(getPacingStats().peakInterval).toBeGreaterThanOrEqual(40000);
     });
 
+    test('fresh snapshot (age < 60s) is restored verbatim', () => {
+      const snap = {
+        currentInterval: 80000,
+        consecutive429s: 2,
+        lastUpdated: Date.now() - 30 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      expect(getPacingSnapshot().currentInterval).toBe(80000);
+      expect(getPacingSnapshot().consecutive429s).toBe(2);
+    });
+
+    test('mid-age snapshot (5min) decays to ~50% of interval', () => {
+      const snap = {
+        currentInterval: 100000, // 100s
+        consecutive429s: 3,
+        lastUpdated: Date.now() - 5 * 60 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      const { currentInterval } = getPacingSnapshot();
+      // Linear decay between 60s (factor 1) and 600s (factor 0):
+      //   factor = 1 - (300-60)/(600-60) = 1 - 240/540 ≈ 0.556
+      //   100000 * 0.556 ≈ 55555
+      expect(currentInterval).toBeGreaterThan(50000);
+      expect(currentInterval).toBeLessThan(60000);
+    });
+
+    test('near-stale snapshot (9min) decays heavily', () => {
+      const snap = {
+        currentInterval: 100000,
+        consecutive429s: 4,
+        lastUpdated: Date.now() - 9 * 60 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      const { currentInterval } = getPacingSnapshot();
+      // factor = 1 - (540-60)/540 ≈ 0.111
+      // 100000 * 0.111 ≈ 11111 — but baselineFloor is 2000, so no floor applied
+      expect(currentInterval).toBeGreaterThan(10000);
+      expect(currentInterval).toBeLessThan(15000);
+    });
+
+    test('decayed interval clamps up to baselineFloor', () => {
+      const snap = {
+        currentInterval: 3000, // just above baseline
+        consecutive429s: 1,
+        lastUpdated: Date.now() - 9 * 60 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      // 3000 * ~0.111 = ~333, clamped to baselineFloor (2000)
+      expect(getPacingSnapshot().currentInterval).toBe(2000);
+    });
+
+    test('decay scales consecutive429s linearly with age', () => {
+      const snap = {
+        currentInterval: 60000,
+        consecutive429s: 5,
+        lastUpdated: Date.now() - 5 * 60 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      // factor ≈ 0.556, 5 * 0.556 ≈ 2.78 → floor = 2
+      expect(getPacingSnapshot().consecutive429s).toBe(2);
+    });
+
+    test('near-stale decay floors consecutive429s toward 0', () => {
+      const snap = {
+        currentInterval: 60000,
+        consecutive429s: 5,
+        lastUpdated: Date.now() - 9 * 60 * 1000,
+      };
+      expect(restorePacingSnapshot(snap)).toBe(true);
+      // factor ≈ 0.111, 5 * 0.111 ≈ 0.56 → floor = 0
+      expect(getPacingSnapshot().consecutive429s).toBe(0);
+    });
   });
 
   describe('throttle', () => {

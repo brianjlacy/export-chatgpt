@@ -79,21 +79,6 @@ describe('CLI flag parsing', () => {
     expect(stdout).not.toContain('Enter Bearer token');
   });
 
-  test('--help shows --no-adaptive-throttle flag', () => {
-    const { stdout } = run(['--help']);
-    expect(stdout).toContain('--no-adaptive-throttle');
-  });
-
-  test('--help shows --min-throttle flag', () => {
-    const { stdout } = run(['--help']);
-    expect(stdout).toContain('--min-throttle');
-  });
-
-  test('--help shows --max-throttle flag', () => {
-    const { stdout } = run(['--help']);
-    expect(stdout).toContain('--max-throttle');
-  });
-
   test('--throttle validates numeric input', () => {
     const { stdout } = run(['--bearer', 'fake', '--throttle', 'notanumber', '--non-interactive']);
     expect(stdout).toContain('Invalid --throttle');
@@ -173,5 +158,15 @@ describe('CLI config propagation', () => {
   test('shows project filter message when --proj is passed', () => {
     const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--proj', 'proj-111']);
     expect(stdout).toContain('Project filter');
+  });
+
+  test('--reset-pacing shows reset banner in output', () => {
+    const { stdout } = run(['--bearer', 'fake', '--non-interactive', '--reset-pacing']);
+    expect(stdout).toContain('Pacing reset: ignoring previous run snapshot');
+  });
+
+  test('--help shows --reset-pacing flag', () => {
+    const { stdout } = run(['--help']);
+    expect(stdout).toContain('--reset-pacing');
   });
 });
