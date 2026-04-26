@@ -140,6 +140,28 @@ Implementation plan for adding Projects, Files, and Deep Research export capabil
 
 ---
 
+## Phase 9: Resilience & Operational Hardening
+
+- [x] Implement **Adaptive Pacing** system
+  - [x] Per-phase baselines (payload 2s / indexing 5s)
+  - [x] Dynamic interval climbing on 429s (honoring Retry-After)
+  - [x] Linear decay of interval on clean responses
+  - [x] Pacing snapshot persistence in `.export-progress.json`
+  - [x] Time-decay logic for restored snapshots (staleness handling)
+  - [x] `--reset-pacing` flag to force baseline restart
+- [x] Implement **Cloudflare Bypass**
+  - [x] Detection of `cf-mitigated: challenge` on 403s
+  - [x] Differentiation between auth failures and IP reputation blocks
+  - [x] Playwright/Chromium integration (`--browser-fetch`)
+  - [x] Browser-based challenge solving and API proxying
+- [x] **Operational Improvements**
+  - [x] SIGINT/SIGTERM handlers for graceful progress flushing
+  - [x] Lightweight `.export-status.json` for external monitoring
+  - [x] ISO-prefixed console logging for non-TTY environments
+  - [x] Throttle ticker optimizations for log files
+
+---
+
 ### Document History
 
 | Version | Date | Author | Changes |
@@ -147,3 +169,4 @@ Implementation plan for adding Projects, Files, and Deep Research export capabil
 | v0.1.0 | 2025-03-04 | user | Initial TODO plan |
 | v0.1.1 | 2026-03-04 | audit-docs | Marked Phases 1–7 and documentation tasks complete per implementation. Remaining: optional SSE research stream capture, end-to-end manual testing |
 | v0.2.0 | 2026-03-31 | user | Software release: all Phase 1–7 work shipped. Remaining open items carried forward: optional SSE research stream capture, end-to-end manual testing. |
+| v0.3.0-dev | 2026-04-25 | user | Added Phase 9: Cloudflare bypass and adaptive pacing (completed). |
