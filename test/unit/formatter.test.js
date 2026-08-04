@@ -132,19 +132,21 @@ describe('formatter', () => {
   });
 
   describe('extractMessagesInOrder', () => {
-    test('extracts messages following first-child path', () => {
+    test('extracts messages following the most recent child path', () => {
       const { extractMessagesInOrder } = load();
       const conversation = {
         mapping: {
-          root: { parent: null, children: ['msg1'], message: null },
-          msg1: { parent: 'root', children: ['msg2'], message: { content: { content_type: 'text', parts: ['Hello'] }, author: { role: 'user' } } },
-          msg2: { parent: 'msg1', children: [], message: { content: { content_type: 'text', parts: ['Hi!'] }, author: { role: 'assistant' } } },
+          root: { parent: null, children: ['deleted', 'replacement'], message: null },
+          deleted: { parent: 'root', children: ['oldReply'], message: { content: { content_type: 'text', parts: ['Deleted prompt'] }, author: { role: 'user' } } },
+          oldReply: { parent: 'deleted', children: [], message: { content: { content_type: 'text', parts: ['Old reply'] }, author: { role: 'assistant' } } },
+          replacement: { parent: 'root', children: ['newReply'], message: { content: { content_type: 'text', parts: ['Replacement prompt'] }, author: { role: 'user' } } },
+          newReply: { parent: 'replacement', children: [], message: { content: { content_type: 'text', parts: ['New reply'] }, author: { role: 'assistant' } } },
         },
       };
       const messages = extractMessagesInOrder(conversation);
       expect(messages).toHaveLength(2);
-      expect(messages[0].content.parts[0]).toBe('Hello');
-      expect(messages[1].content.parts[0]).toBe('Hi!');
+      expect(messages[0].content.parts[0]).toBe('Replacement prompt');
+      expect(messages[1].content.parts[0]).toBe('New reply');
     });
 
     test('returns empty array for missing mapping', () => {
