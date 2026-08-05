@@ -2,12 +2,16 @@
 
 // Regression tests for conversation fetches that return HTTP 404.
 //
-// A 404 here is ambiguous: it can mean the conversation is gone, but it is
-// also what Cloudflare's edge returns to a non-browser client, especially
-// deep into a long run. So failures are recorded for diagnosis and RETRIED by
-// default; skipping is opt-in and gated on repeated failures across runs.
-// Treating a transient 404 as permanent would convert a recoverable failure
-// into silent data loss.
+// Two different situations share this status code, distinguishable only by
+// the response body:
+//   no_access  — "You don't have access to this conversation". Stable and
+//                conversation-specific; reproduces from the browser.
+//   not_found  — a bare 404. Usually the client's fault (edge/bot rejection,
+//                which climbs the longer a run goes) and retryable.
+// Verified against a live account: of 60 sampled failures, 31 were no_access
+// and 29 returned HTTP 200 with full content moments later. Treating the
+// second kind as permanent would convert a recoverable failure into silent
+// data loss, so it is always retried unless the user opts out.
 
 const fs = require('fs');
 const os = require('os');
@@ -83,19 +87,35 @@ describe('permanently failed conversations', () => {
       delete global.fetch;
     });
 
-    test('tags 404 as notFound with status, and does not retry', async () => {
-      global.fetch = jest.fn().mockResolvedValue({ status: 404, ok: false, statusText: 'Not Found' });
+    test('tags a bare 404 as notFound, ambiguous, and does not retry', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 404, ok: false, statusText: 'Not Found', text: () => Promise.resolve('{"detail":"Not found"}'),
+      });
 
       const error = await auth.fetchWithRetry('https://example.test/c/1', {}).catch(e => e);
 
       expect(error.notFound).toBe(true);
+      expect(error.accessDenied).toBe(false);
       expect(error.status).toBe(404);
       expect(error.noRetry).toBe(true);
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    test('distinguishes an access-denied 404 from a bare one', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 404, ok: false, statusText: 'Not Found',
+        text: () => Promise.resolve('{"detail":{"message":"You don\u2019t have access to this conversation. Make sure you\u2019re logged in to the right account."}}'),
+      });
+
+      const error = await auth.fetchWithRetry('https://example.test/c/1', {}).catch(e => e);
+
+      expect(error.notFound).toBe(true);
+      expect(error.accessDenied).toBe(true);
+      expect(error.message).toMatch(/No access/);
+    });
+
     test('does not tag other HTTP errors as notFound', async () => {
-      global.fetch = jest.fn().mockResolvedValue({ status: 500, ok: false, statusText: 'Server Error' });
+      global.fetch = jest.fn().mockResolvedValue({ status: 500, ok: false, statusText: 'Server Error', text: () => Promise.resolve('') });
 
       const error = await auth.fetchWithRetry('https://example.test/c/1', {}, 1).catch(e => e);
 
@@ -104,7 +124,7 @@ describe('permanently failed conversations', () => {
     });
 
     test('auth errors stay auth errors, not notFound', async () => {
-      global.fetch = jest.fn().mockResolvedValue({ status: 401, ok: false, statusText: 'Unauthorized' });
+      global.fetch = jest.fn().mockResolvedValue({ status: 401, ok: false, statusText: 'Unauthorized', text: () => Promise.resolve('') });
 
       const error = await auth.fetchWithRetry('https://example.test/c/1', {}).catch(e => e);
 
@@ -139,20 +159,20 @@ describe('permanently failed conversations', () => {
       expect(output()).toContain('683 skipped (prior 404s)');
     });
 
-    test('reports the cumulative 404 total without claiming deletion', () => {
-      printSummary(summary({ failedConversations: 683 }));
+    test('splits the 404 total into stable and ambiguous', () => {
+      printSummary(summary({ failedConversations: 683, failedNoAccess: 340 }));
       const out = output();
-      expect(out).toContain('683 conversation(s) returned HTTP 404');
-      expect(out).toContain('will be retried next run');
-      expect(out).toContain('not proof of deletion');
+      expect(out).toContain('683 total');
+      expect(out).toContain('340 — server says this account cannot read them');
+      expect(out).toContain('343 — ambiguous. Retried automatically next run.');
       expect(out).toContain('failedConversationIds');
-      expect(out).not.toMatch(/purged|deleted or purged/);
+      expect(out).not.toMatch(/purged/);
     });
 
     test('stays silent when nothing failed', () => {
       printSummary(summary());
       expect(output()).not.toContain('skipped (prior 404s)');
-      expect(output()).not.toContain('returned HTTP 404');
+      expect(output()).not.toContain('404 responses');
     });
   });
 

@@ -42,7 +42,7 @@ describe('permanent 404 tracking across runs (e2e)', () => {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(makeConv('conv-001-aaaa-bbbb', 'Alive')) });
       }
       if (url.includes('conv-002')) {
-        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' });
+        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', text: () => Promise.resolve('{"detail":"Not found"}') });
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
     });
@@ -148,7 +148,7 @@ describe('permanent 404 tracking across runs (e2e)', () => {
         if (!listed) { listed = true; return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: many, total: 40, limit: 28, offset: 0 }) }); }
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
       }
-      return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' });
+      return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', text: () => Promise.resolve('{"detail":"Not found"}') });
     });
 
     const progress = loadProgress();

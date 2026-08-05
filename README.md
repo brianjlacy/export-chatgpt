@@ -194,38 +194,40 @@ This likely means one of:
 - The account genuinely has no conversations
 
 ### "HTTP 404: Not Found" on some conversations
-A 404 from the conversation detail endpoint is **not** reliable evidence that the conversation is
-gone. Cloudflare's bot-fingerprinting at `chatgpt.com/backend-api` returns 404/401 to clients that
-don't look browser-shaped, and the failure rate tends to climb the longer a run goes. Conversations
-that 404 from this tool routinely return HTTP 200 with full content from the browser moments later.
+Two different situations share this status code, and only the response body tells them apart. The
+exporter reads it and records which one you hit:
 
-Before assuming anything is lost, open one in your browser:
+| Recorded `reason` | Server says | Behavior |
+|---|---|---|
+| `no_access` | "You don't have access to this conversation" | Stable — reproduces in the browser too. Skipped after 2 runs. `--retry-all` overrides. |
+| `not_found` | bare 404 | Ambiguous — usually the client being rejected at the edge. **Retried automatically.** |
+
+A bare 404 is **not** proof the conversation is gone. Cloudflare's bot-fingerprinting at
+`chatgpt.com/backend-api` returns 404/401 to clients that don't look browser-shaped, and the failure
+rate climbs the longer a run goes. Before assuming loss, open it in your browser:
 
 ```
 https://chatgpt.com/c/<conversation-id>
 ```
 
-If it renders, your data is fine and the failure was client-side — re-run with a fresh token.
+If it renders, your data is fine — re-run with a fresh token.
 
 **Signs it's a session-level failure rather than missing conversations:**
 
-- A long unbroken streak of 404s, especially at the end of a run (the tool warns when it sees 25+
-  consecutive). Real deletions don't arrive in contiguous blocks ordered by last-updated.
-- A high failure rate that varies with position in the run rather than with the age of the chat.
+- A long unbroken streak of bare 404s, especially at the end of a run (the tool warns at 25+
+  consecutive and marks the streak so it can never be skipped).
+- A failure rate that varies with position in the run rather than with the age of the chat.
 
-Failed IDs are recorded in `.export-progress.json` under `failedConversationIds` with attempt counts
-and timestamps, and are **retried on every run by default**. Review them with:
+Review what was recorded, with counts by reason:
 
 ```bash
 npx export-chatgpt --verify
 ```
 
-If you've confirmed some are genuinely gone and want to stop re-requesting them, opt in — this only
-skips IDs that failed on 3+ separate runs, and never skips ones recorded during a run-level collapse:
-
-```bash
-npx export-chatgpt --skip-failed
-```
+`no_access` usually means the conversation is listed in your workspace but owned elsewhere — common
+after an account migration, where the listing row survives but the content stays with the original
+account. The chat isn't necessarily deleted; this account just can't read it, and no export tool
+running as you will change that.
 
 ### Rate limiting
 If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
