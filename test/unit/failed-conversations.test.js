@@ -1,12 +1,13 @@
 'use strict';
 
-// Regression tests for permanent conversation-fetch failures (HTTP 404).
+// Regression tests for conversation fetches that return HTTP 404.
 //
-// The listing endpoint keeps returning rows for conversations whose detail
-// endpoint 404s (deleted, purged by workspace retention, or never fully
-// materialized), and the local index is append-only. Without a persisted
-// record of the failure, every run re-requests every dead conversation
-// forever. See the file-level analogue: progress.failedFileIds.
+// A 404 here is ambiguous: it can mean the conversation is gone, but it is
+// also what Cloudflare's edge returns to a non-browser client, especially
+// deep into a long run. So failures are recorded for diagnosis and RETRIED by
+// default; skipping is opt-in and gated on repeated failures across runs.
+// Treating a transient 404 as permanent would convert a recoverable failure
+// into silent data loss.
 
 const fs = require('fs');
 const os = require('os');
@@ -133,30 +134,32 @@ describe('permanently failed conversations', () => {
       ...overrides,
     });
 
-    test('reports conversations skipped this run as unavailable', () => {
+    test('reports conversations skipped this run', () => {
       printSummary(summary({ regular: { success: 5, skip: 0, update: 0, error: 0, fileCount: 0, dead: 683 } }));
-      expect(output()).toContain('683 unavailable');
+      expect(output()).toContain('683 skipped (prior 404s)');
     });
 
-    test('reports the cumulative failed total and how to retry', () => {
+    test('reports the cumulative 404 total without claiming deletion', () => {
       printSummary(summary({ failedConversations: 683 }));
       const out = output();
-      expect(out).toContain('683 conversation(s) return HTTP 404');
-      expect(out).toContain('--retry-failed');
+      expect(out).toContain('683 conversation(s) returned HTTP 404');
+      expect(out).toContain('will be retried next run');
+      expect(out).toContain('not proof of deletion');
       expect(out).toContain('failedConversationIds');
+      expect(out).not.toMatch(/purged|deleted or purged/);
     });
 
     test('stays silent when nothing failed', () => {
       printSummary(summary());
-      expect(output()).not.toContain('unavailable');
-      expect(output()).not.toContain('--retry-failed');
+      expect(output()).not.toContain('skipped (prior 404s)');
+      expect(output()).not.toContain('returned HTTP 404');
     });
   });
 
   describe('CLI flag', () => {
-    test('--retry-failed sets retryFailedConversations', () => {
+    test('skipping is off by default — failures are retried', () => {
       const { CONFIG } = require('../../lib/config');
-      expect(CONFIG.retryFailedConversations).toBe(false);
+      expect(CONFIG.skipFailedConversations).toBe(false);
     });
   });
 });

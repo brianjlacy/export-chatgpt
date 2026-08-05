@@ -66,7 +66,7 @@ describe('permanent 404 tracking across runs (e2e)', () => {
     CONFIG.projectsOnly = false;
     CONFIG.downloadFiles = false;
     CONFIG.updateExisting = false;
-    CONFIG.retryFailedConversations = false;
+    CONFIG.skipFailedConversations = false;
     CONFIG.showSummary = true;
     initPaths();
   });
@@ -98,7 +98,7 @@ describe('permanent 404 tracking across runs (e2e)', () => {
     expect(onDisk.failedConversationIds['conv-002-dead-beef'].status).toBe(404);
   });
 
-  test('skips the dead conversation on the second run without re-requesting it', async () => {
+  test('RETRIES the 404 on the second run by default — a 404 is not proof of deletion', async () => {
     installFetch();
     const { exportConversations } = require('../../lib/exporter');
     const { loadProgress } = require('../../lib/storage');
@@ -108,21 +108,74 @@ describe('permanent 404 tracking across runs (e2e)', () => {
 
     // Second run, fresh mock and progress reloaded from disk
     const secondFetch = installFetch();
-    const result = await exportConversations('fake-token', loadProgress());
+    const progress2 = loadProgress();
+    const result = await exportConversations('fake-token', progress2);
 
-    expect(detailCalls(secondFetch, 'conv-002')).toBe(0);
-    expect(result.dead).toBe(1);
-    expect(result.error).toBe(0);
+    expect(detailCalls(secondFetch, 'conv-002')).toBe(1);
+    expect(result.dead).toBe(0);
+    expect(result.error).toBe(1);
+    expect(progress2.failedConversationIds['conv-002-dead-beef'].attempts).toBe(2);
   });
 
-  test('--retry-failed re-requests it', async () => {
+  test('--skip-failed still retries until the ID has failed on 3 separate runs', async () => {
+    const { exportConversations } = require('../../lib/exporter');
+    const { loadProgress } = require('../../lib/storage');
+    CONFIG.skipFailedConversations = true;
+
+    const seen = [];
+    for (let run = 1; run <= 4; run++) {
+      const f = installFetch();
+      const result = await exportConversations('fake-token', loadProgress());
+      seen.push({ run, requested: detailCalls(f, 'conv-002'), dead: result.dead });
+    }
+
+    // Requested on runs 1-3, skipped only from run 4 once attempts hit the threshold
+    expect(seen.map(s => s.requested)).toEqual([1, 1, 1, 0]);
+    expect(seen[3].dead).toBe(1);
+  });
+
+  test('a run-level collapse is never eligible for skipping, even with --skip-failed', async () => {
+    const { exportConversations } = require('../../lib/exporter');
+    const { loadProgress } = require('../../lib/storage');
+
+    // 40 conversations, all 404 — a session-level failure, not 40 deletions
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      id: `conv-${String(i).padStart(3, '0')}-cccc-dddd`, title: `C${i}`, create_time: 1700000000,
+    }));
+    let listed = false;
+    global.fetch = jest.fn().mockImplementation((url) => {
+      if (url.includes('/conversations?')) {
+        if (!listed) { listed = true; return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: many, total: 40, limit: 28, offset: 0 }) }); }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+      }
+      return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' });
+    });
+
+    const progress = loadProgress();
+    await exportConversations('fake-token', progress);
+
+    const entries = Object.values(progress.failedConversationIds);
+    expect(entries.length).toBe(40);
+    expect(entries.every(e => e.duringRunCollapse)).toBe(true);
+
+    // Even opted in and past the attempt threshold, collapse-tagged IDs are retried
+    CONFIG.skipFailedConversations = true;
+    for (const e of Object.values(progress.failedConversationIds)) e.attempts = 10;
+    const { saveProgress } = require('../../lib/storage');
+    saveProgress(progress);
+
+    const f = installFetch();
+    const result = await exportConversations('fake-token', loadProgress());
+    expect(result.dead).toBe(0);
+  });
+
+  test('--skip-failed skips only after the threshold is met', async () => {
     installFetch();
     const { exportConversations } = require('../../lib/exporter');
     const { loadProgress } = require('../../lib/storage');
 
     await exportConversations('fake-token', loadProgress());
 
-    CONFIG.retryFailedConversations = true;
     const secondFetch = installFetch();
     const progress = loadProgress();
     const result = await exportConversations('fake-token', progress);
@@ -141,7 +194,6 @@ describe('permanent 404 tracking across runs (e2e)', () => {
 
     await exportConversations('fake-token', loadProgress());
 
-    CONFIG.retryFailedConversations = true;
     global.fetch = jest.fn().mockImplementation((url) => {
       if (url.includes('/conversations?')) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
