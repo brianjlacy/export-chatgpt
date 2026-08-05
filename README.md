@@ -110,6 +110,41 @@ export CHATGPT_BEARER_TOKEN="eyJ..."
 npx export-chatgpt
 ```
 
+Passing `--bearer` works too, but puts the token in your shell history — prefer the environment
+variable.
+
+#### Keeping the token in a file
+
+Tokens expire quickly, so if you re-run often it's convenient to keep the current one in a `.env`
+file. The exporter does **not** read `.env` on its own (no `dotenv` dependency), but Node can load it
+for you — no extra packages, nothing to install:
+
+```bash
+# .env
+CHATGPT_BEARER_TOKEN='eyJ...'
+```
+
+```bash
+node --env-file=.env export-chatgpt.js
+```
+
+`--env-file` is a Node flag, so it goes **before** the script name. It accepts both `KEY=value` and
+`export KEY=value` lines, so a `.env` you already source in your shell works unchanged. Use
+`--env-file-if-exists=.env` instead if you want the command to succeed when the file is absent.
+
+> Requires Node 20.6+ (`--env-file`) or 20.12+ (`--env-file-if-exists`). On Node 18, use
+> `source .env && npx export-chatgpt` instead.
+
+An explicitly-set environment variable takes precedence over the file, so you can override a stored
+token for a single run:
+
+```bash
+CHATGPT_BEARER_TOKEN='eyJ...' node --env-file=.env export-chatgpt.js
+```
+
+**Make sure `.env` is gitignored** before putting a token in it. This repo's `.gitignore` already
+covers `.env`, `*.env`, and `.env.*`.
+
 ### Interactive Mode
 
 The only interactive prompt is the bearer token — if neither `--bearer`, `--token`, nor the corresponding environment variables are provided, the script will prompt you to enter a token.
