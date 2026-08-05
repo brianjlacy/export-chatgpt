@@ -193,6 +193,25 @@ This likely means one of:
 - You're logged into a different workspace than expected
 - The account genuinely has no conversations
 
+### "HTTP 404: Not Found" on some conversations
+The conversation *list* endpoint returns rows whose *detail* endpoint answers 404. This happens when a
+conversation was deleted, purged by workspace data retention (common on Team plans), or never fully
+materialized after an interrupted generation. The content is gone server-side — no export tool can
+recover it.
+
+These IDs are recorded in `.export-progress.json` under `failedConversationIds` and skipped on later
+runs, so a dead conversation no longer costs a throttled request on every run. To review them:
+
+```bash
+npx export-chatgpt --verify
+```
+
+To re-attempt them anyway (for example after switching accounts or workspaces):
+
+```bash
+npx export-chatgpt --retry-failed
+```
+
 ### Rate limiting
 If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
