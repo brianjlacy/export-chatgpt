@@ -85,6 +85,7 @@ describe('storage', () => {
         projects: {},
         downloadedFileIds: [],
         failedFileIds: {},
+        failedConversationIds: {},
       });
     });
 
@@ -98,6 +99,7 @@ describe('storage', () => {
         projects: { proj1: { downloadedIds: ['c1'] } },
         downloadedFileIds: ['f1'],
         failedFileIds: { 'f2': 'file_not_found' },
+        failedConversationIds: { 'c2': { status: 404, reason: 'not_found', attempts: 1 } },
       };
       saveProgress(data);
       const loaded = loadProgress();

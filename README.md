@@ -193,6 +193,42 @@ This likely means one of:
 - You're logged into a different workspace than expected
 - The account genuinely has no conversations
 
+### "HTTP 404: Not Found" on some conversations
+Two different situations share this status code, and only the response body tells them apart. The
+exporter reads it and records which one you hit:
+
+| Recorded `reason` | Server says | Behavior |
+|---|---|---|
+| `no_access` | "You don't have access to this conversation" | Stable — reproduces in the browser too. Skipped after 2 runs. `--retry-all` overrides. |
+| `not_found` | bare 404 | Ambiguous — usually the client being rejected at the edge. **Retried automatically.** |
+
+A bare 404 is **not** proof the conversation is gone. Cloudflare's bot-fingerprinting at
+`chatgpt.com/backend-api` returns 404/401 to clients that don't look browser-shaped, and the failure
+rate climbs the longer a run goes. Before assuming loss, open it in your browser:
+
+```
+https://chatgpt.com/c/<conversation-id>
+```
+
+If it renders, your data is fine — re-run with a fresh token.
+
+**Signs it's a session-level failure rather than missing conversations:**
+
+- A long unbroken streak of bare 404s, especially at the end of a run (the tool warns at 25+
+  consecutive and marks the streak so it can never be skipped).
+- A failure rate that varies with position in the run rather than with the age of the chat.
+
+Review what was recorded, with counts by reason:
+
+```bash
+npx export-chatgpt --verify
+```
+
+`no_access` usually means the conversation is listed in your workspace but owned elsewhere — common
+after an account migration, where the listing row survives but the content stays with the original
+account. The chat isn't necessarily deleted; this account just can't read it, and no export tool
+running as you will change that.
+
 ### Rate limiting
 If you see 429 errors, the script will automatically wait and retry. You can also increase the throttle:
 ```bash
