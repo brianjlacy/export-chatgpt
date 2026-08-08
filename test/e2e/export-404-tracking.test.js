@@ -211,3 +211,61 @@ describe('permanent 404 tracking across runs (e2e)', () => {
       .toEqual({});
   });
 });
+
+describe('collapse tag vs later classification', () => {
+  const tmp = require('os').tmpdir();
+  let CONFIG, PATHS, initPaths, dir;
+
+  beforeEach(() => {
+    jest.resetModules();
+    dir = require('fs').mkdtempSync(require('path').join(tmp, 'export-collapse-'));
+    jest.spyOn(console, 'log').mockImplementation();
+    jest.spyOn(process.stdout, 'write').mockImplementation();
+    ({ CONFIG, PATHS, initPaths } = require('../../lib/config'));
+    CONFIG.outputDir = dir; CONFIG.exportFormat = 'json'; CONFIG.throttleMs = 0;
+    CONFIG.includeProjects = false; CONFIG.projectsOnly = false; CONFIG.downloadFiles = false;
+    CONFIG.updateExisting = false; CONFIG.skipFailedConversations = false; CONFIG.retryAllFailed = false;
+    initPaths();
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (global.fetch && global.fetch.mockRestore) global.fetch.mockRestore();
+    require('fs').rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a definitive no_access clears a stale duringRunCollapse tag', async () => {
+    const conv = { id: 'conv-collapse-aaaa-bbbb', title: 'Was collapsed', create_time: 1700000000 };
+    let listed = false;
+    global.fetch = jest.fn().mockImplementation((url) => {
+      if (url.includes('/conversations?')) {
+        if (!listed) { listed = true; return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [conv], total: 1, limit: 28, offset: 0 }) }); }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
+      }
+      return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found',
+        text: () => Promise.resolve('{"detail":{"message":"You don’t have access to this conversation."}}') });
+    });
+
+    const { exportConversations } = require('../../lib/exporter');
+    const { loadProgress, saveProgress } = require('../../lib/storage');
+
+    // Simulate the pre-classification state: recorded during a collapse.
+    const progress = loadProgress();
+    progress.failedConversationIds[conv.id] = {
+      status: 404, reason: 'not_found', attempts: 4, duringRunCollapse: true,
+      firstFailedAt: '2026-08-01T00:00:00.000Z', lastFailedAt: '2026-08-01T00:00:00.000Z',
+    };
+    saveProgress(progress);
+
+    const after = loadProgress();
+    await exportConversations('fake-token', after);
+
+    const entry = after.failedConversationIds[conv.id];
+    expect(entry.reason).toBe('no_access');
+    expect(entry.duringRunCollapse).toBeUndefined();
+
+    // ...and it is now eligible to be skipped instead of retried forever.
+    const { exportConversations: run2 } = require('../../lib/exporter');
+    const result = await run2('fake-token', loadProgress());
+    expect(result.dead).toBe(1);
+  });
+});
